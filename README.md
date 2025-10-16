@@ -26,6 +26,10 @@ https://github.com/user-attachments/assets/04070894-71ec-4051-92ce-d3140827370d
 - Neovim 0.10+
 - [Difftastic](https://github.com/Wilfred/difftastic) (external diff tool)
 
+```bash
+difft --color=always $left $right
+```
+
 ## Installation
 
 ### lazy.nvim
