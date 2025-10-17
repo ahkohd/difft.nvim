@@ -280,7 +280,6 @@ command = "jj diff --no-pager"  -- Diff command to execute
 auto_jump = true                 -- Jump to first change on open
 no_diff_message = "No changes found"
 loading_message = "Loading diff..."
-refresh_on_resize = true         -- Auto-refresh on window resize
 ```
 
 ## Usage
