@@ -65,7 +65,7 @@ return {
   },
   config = function()
     require("difft").setup({
-      command = "jj diff --no-pager",  -- or "git diff"
+      command = "jj diff --no-pager",  -- or "GIT_EXTERNAL_DIFF='difft --color=always' git diff"
       layout = "float",  -- nil (buffer), "float", or "ivy_taller"
     })
   end,
@@ -368,3 +368,17 @@ nvim -l tests/run.lua
 ```
 
 See [tests/README.md](./tests/README.md) for details.
+
+## Troubleshooting
+
+### No colors visible in diff output
+
+Ensure that the `difft` command is called with the `--color=always` flag. You can customize the command in the setup:
+
+```lua
+require("difft").setup({
+  command = "GIT_EXTERNAL_DIFF='difft --color=always' git diff",
+})
+```
+
+`difft.nvim` relies on ANSI color codes to render colored diffs. These codes must be inserted by `difft`.
