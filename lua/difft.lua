@@ -226,11 +226,18 @@ local function get_highlight_with_format(base_hl, bold, italic, dim)
 	local base_props = vim.api.nvim_get_hl(0, { name = base_hl })
 
 	-- Add formatting attributes
-	local new_props = vim.tbl_extend("force", base_props, {
-		bold = bold or nil,
-		italic = italic or nil,
-		-- Dim is handled by using Comment for base_hl, so we don't need to set it here
-	})
+	-- Only set attributes that are explicitly enabled (true)
+	-- nil or false means "inherit from base", so we don't override
+	local format_attrs = {}
+	if bold then
+		format_attrs.bold = true
+	end
+	if italic then
+		format_attrs.italic = true
+	end
+	-- Dim is handled by using Comment for base_hl, so we don't need to set it here
+
+	local new_props = vim.tbl_extend("force", base_props, format_attrs)
 
 	-- Create the new highlight group
 	vim.api.nvim_set_hl(0, key, new_props)

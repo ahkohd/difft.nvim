@@ -1,6 +1,6 @@
 -- luacheck: globals vim
 
-local test = require("dev.difft.tests.test_runner")
+local test = require("test_runner")
 local describe = test.describe
 local it = test.it
 local assert = test.assert
@@ -646,6 +646,397 @@ describe("difft.nvim", function()
 			local line_text = "123abc def"
 			local result = extract_line_number(line_text)
 			assert.is_nil(result)
+		end)
+	end)
+
+	describe("parse_ansi_line", function()
+		local parse_ansi_line = difft._test.parse_ansi_line
+
+		it("should parse green text with bold", function()
+			local line = "\027[92;1mif\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("if", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd_bold", highlights[1].hl_group)
+			assert.are.equal(0, highlights[1].col)
+			assert.are.equal(2, highlights[1].length)
+		end)
+
+		it("should parse green text without bold", function()
+			local line = "\027[92mvim\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("vim", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd", highlights[1].hl_group)
+		end)
+
+		it("should handle multiple bold/non-bold segments", function()
+			local line = "\027[92;1mif\027[0m \027[92;1mnot\027[0m \027[92mvim\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("if not vim", clean_text)
+			assert.are.equal(3, #highlights)
+
+			-- "if" should be bold
+			assert.are.equal("DiffAdd_bold", highlights[1].hl_group)
+			assert.are.equal("if", clean_text:sub(highlights[1].col + 1, highlights[1].col + highlights[1].length))
+
+			-- "not" should be bold
+			assert.are.equal("DiffAdd_bold", highlights[2].hl_group)
+			assert.are.equal("not", clean_text:sub(highlights[2].col + 1, highlights[2].col + highlights[2].length))
+
+			-- "vim" should NOT be bold
+			assert.are.equal("DiffAdd", highlights[3].hl_group)
+			assert.are.equal("vim", clean_text:sub(highlights[3].col + 1, highlights[3].col + highlights[3].length))
+		end)
+
+		it("should handle reset code (0) properly", function()
+			local line = "\027[92;1mbold\027[0m normal"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("bold normal", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd_bold", highlights[1].hl_group)
+			assert.are.equal(4, highlights[1].length) -- Only "bold" is highlighted
+		end)
+
+		it("should parse red text with bold", function()
+			local line = "\027[91;1mdeleted\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("deleted", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffDelete_bold", highlights[1].hl_group)
+		end)
+
+		it("should parse italic formatting", function()
+			local line = "\027[32;3mitalic\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("italic", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd_italic", highlights[1].hl_group)
+		end)
+
+		it("should parse bold and italic together", function()
+			local line = "\027[32;1;3mbold-italic\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("bold-italic", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd_bold_italic", highlights[1].hl_group)
+		end)
+
+		it("should handle dim (code 2) formatting", function()
+			local line = "\027[2mdimmed text\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("dimmed text", clean_text)
+			assert.are.equal(1, #highlights)
+			-- Dim should use Comment highlight
+			assert.are.equal("Comment_dim", highlights[1].hl_group)
+		end)
+
+		it("should handle complex real-world diff line", function()
+			-- Real example from difftastic with line number and mixed bold/normal
+			local line = "\027[92;1m38 \027[0m\027[92;1mif\027[0m \027[92;1mnot\027[0m \027[92mvim\027[0m\027[92m.\027[0m\027[92mg\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("38 if not vim.g", clean_text)
+
+			-- Should have multiple highlight segments (6 total: "38 ", "if", "not", "vim", ".", "g")
+			assert.are.equal(6, #highlights)
+
+			-- Line number "38 " should be bold
+			assert.are.equal("DiffAdd_bold", highlights[1].hl_group)
+
+			-- "if" should be bold
+			assert.are.equal("DiffAdd_bold", highlights[2].hl_group)
+
+			-- "not" should be bold
+			assert.are.equal("DiffAdd_bold", highlights[3].hl_group)
+
+			-- "vim" should NOT be bold
+			assert.are.equal("DiffAdd", highlights[4].hl_group)
+
+			-- "." should NOT be bold
+			assert.are.equal("DiffAdd", highlights[5].hl_group)
+
+			-- "g" should NOT be bold
+			assert.are.equal("DiffAdd", highlights[6].hl_group)
+		end)
+
+		it("should strip ANSI codes and preserve text", function()
+			local line = "\027[1m\027[32mHello\027[0m \027[91mWorld\027[0m"
+			local clean_text, _ = parse_ansi_line(line)
+
+			assert.are.equal("Hello World", clean_text)
+		end)
+
+		it("should handle empty line", function()
+			local line = ""
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("", clean_text)
+			assert.are.equal(0, #highlights)
+		end)
+
+		it("should handle line with no ANSI codes", function()
+			local line = "plain text"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("plain text", clean_text)
+			assert.are.equal(0, #highlights)
+		end)
+
+		-- Test all ANSI color codes (30-37, 90-97)
+		it("should parse standard red (code 31) as DiffDelete", function()
+			local line = "\027[31mdeleted\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("deleted", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffDelete", highlights[1].hl_group)
+		end)
+
+		it("should parse standard green (code 32) as DiffAdd", function()
+			local line = "\027[32madded\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("added", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd", highlights[1].hl_group)
+		end)
+
+		it("should parse yellow (code 33) as DiffChange", function()
+			local line = "\027[33mchanged\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("changed", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffChange", highlights[1].hl_group)
+		end)
+
+		it("should parse bright yellow (code 93) as DiffChange", function()
+			local line = "\027[93mchanged\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("changed", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffChange", highlights[1].hl_group)
+		end)
+
+		it("should parse blue (code 34) as DiagnosticInfo", function()
+			local line = "\027[34minfo\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("info", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiagnosticInfo", highlights[1].hl_group)
+		end)
+
+		it("should parse cyan (code 36) as DiagnosticInfo", function()
+			local line = "\027[36mcyan\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("cyan", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiagnosticInfo", highlights[1].hl_group)
+		end)
+
+		it("should parse magenta (code 35) as DiagnosticHint", function()
+			local line = "\027[35mhint\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("hint", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiagnosticHint", highlights[1].hl_group)
+		end)
+
+		it("should parse bright magenta (code 95) as DiagnosticHint", function()
+			local line = "\027[95mhint\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("hint", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiagnosticHint", highlights[1].hl_group)
+		end)
+
+		it("should parse black (code 30) as Comment", function()
+			local line = "\027[30mcomment\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("comment", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("Comment", highlights[1].hl_group)
+		end)
+
+		it("should parse white (code 37) as Comment", function()
+			local line = "\027[37mwhite\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("white", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("Comment", highlights[1].hl_group)
+		end)
+
+		it("should parse bright gray (code 90) as Comment", function()
+			local line = "\027[90mgray\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("gray", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("Comment", highlights[1].hl_group)
+		end)
+
+		it("should parse bright white (code 97) as Comment", function()
+			local line = "\027[97mbright\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("bright", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("Comment", highlights[1].hl_group)
+		end)
+
+		-- Test dim (code 2) with different color combinations
+		it("should handle dim with no prior color (sets to Comment)", function()
+			local line = "\027[2mdim text\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("dim text", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("Comment_dim", highlights[1].hl_group)
+		end)
+
+		it("should handle dim with color set after dim", function()
+			local line = "\027[2;32mdim green\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("dim green", clean_text)
+			assert.are.equal(1, #highlights)
+			-- dim should set Comment, then color should override to DiffAdd
+			assert.are.equal("DiffAdd_dim", highlights[1].hl_group)
+		end)
+
+		it("should handle dim with color set before dim", function()
+			local line = "\027[32;2mgreen dim\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("green dim", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd_dim", highlights[1].hl_group)
+		end)
+
+		-- Test multiple formatting attributes together
+		it("should handle bold + dim together", function()
+			local line = "\027[1;2mbold dim\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("bold dim", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("Comment_bold_dim", highlights[1].hl_group)
+		end)
+
+		it("should handle bold + italic + dim together", function()
+			local line = "\027[32;1;2;3mformatted\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("formatted", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd_bold_italic_dim", highlights[1].hl_group)
+		end)
+
+		-- Test edge cases
+		it("should handle consecutive ANSI codes with no text", function()
+			local line = "\027[32m\027[1m\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("", clean_text)
+			assert.are.equal(0, #highlights)
+		end)
+
+		it("should handle ANSI codes at start and end with text", function()
+			local line = "\027[92mtext\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("text", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd", highlights[1].hl_group)
+			assert.are.equal(0, highlights[1].col)
+			assert.are.equal(4, highlights[1].length)
+		end)
+
+		it("should handle text before any ANSI codes", function()
+			local line = "plain \027[92mgreen\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("plain green", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd", highlights[1].hl_group)
+			assert.are.equal(6, highlights[1].col) -- After "plain "
+			assert.are.equal(5, highlights[1].length)
+		end)
+
+		it("should handle text after reset code", function()
+			local line = "\027[92mgreen\027[0m plain"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("green plain", clean_text)
+			assert.are.equal(1, #highlights)
+			assert.are.equal("DiffAdd", highlights[1].hl_group)
+			assert.are.equal(5, highlights[1].length) -- Only "green" is highlighted
+		end)
+
+		it("should handle multiple color changes in one line", function()
+			local line = "\027[31mred\027[0m \027[32mgreen\027[0m \027[33myellow\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("red green yellow", clean_text)
+			assert.are.equal(3, #highlights)
+			assert.are.equal("DiffDelete", highlights[1].hl_group)
+			assert.are.equal("DiffAdd", highlights[2].hl_group)
+			assert.are.equal("DiffChange", highlights[3].hl_group)
+		end)
+
+		it("should handle nested formatting changes", function()
+			local line = "\027[32mgreen \027[1mbold green\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("green bold green", clean_text)
+			assert.are.equal(2, #highlights)
+			assert.are.equal("DiffAdd", highlights[1].hl_group)
+			assert.are.equal("DiffAdd_bold", highlights[2].hl_group)
+		end)
+
+		it("should handle format reset mid-line then continue", function()
+			local line = "\027[32;1mbold\027[0m normal \027[32;1mbold\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("bold normal bold", clean_text)
+			assert.are.equal(2, #highlights)
+			assert.are.equal("DiffAdd_bold", highlights[1].hl_group)
+			assert.are.equal("DiffAdd_bold", highlights[2].hl_group)
+			assert.are.equal(0, highlights[1].col)
+			assert.are.equal(12, highlights[2].col) -- After "bold normal "
+		end)
+
+		it("should ignore unknown ANSI codes", function()
+			local line = "\027[999munknown\027[0m"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("unknown", clean_text)
+			-- Unknown code should be ignored, no highlight applied
+			assert.are.equal(0, #highlights)
+		end)
+
+		it("should handle partial ANSI code at end (malformed)", function()
+			local line = "text\027[32"
+			local clean_text, highlights = parse_ansi_line(line)
+
+			assert.are.equal("text\027[32", clean_text)
+			assert.are.equal(0, #highlights)
 		end)
 	end)
 

@@ -2,13 +2,12 @@
 
 -- Get the script directory
 local script_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h")
-local repo_root = vim.fn.fnamemodify(script_dir, ":h:h:h:h")
+local repo_root = vim.fn.fnamemodify(script_dir, ":h")
 
--- Add the nvim config to the package path
+-- Add the plugin to the package path
 package.path = package.path
 	.. ";" .. repo_root .. "/lua/?.lua"
-	.. ";" .. repo_root .. "/lua/?/init.lua"
-	.. ";" .. repo_root .. "/lua/dev/difft/lua/?.lua"
+	.. ";" .. repo_root .. "/tests/?.lua"
 
 -- Run the tests
-require("dev.difft.tests.difft_spec")
+require("difft_spec")
