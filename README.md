@@ -38,6 +38,8 @@ difft --color=always $left $right
 GIT_EXTERNAL_DIFF='difft --color=always' git diff
 ```
 
+For more difftastic options and usage examples, see the [documentation](https://difftastic.wilfred.me.uk/usage.html).
+
 ## Installation
 
 ### lazy.nvim
