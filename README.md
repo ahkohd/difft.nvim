@@ -26,8 +26,15 @@ https://github.com/user-attachments/assets/04070894-71ec-4051-92ce-d3140827370d
 - Neovim 0.10+
 - [Difftastic](https://github.com/Wilfred/difftastic) (external diff tool)
 
+> **Important:** difft.nvim requires ANSI color codes to render colored diffs.
+You **must** use the `--color=always` flag when calling difft, otherwise no colors will be visible in the diff output.
+
 ```bash
+# Example difft command format
 difft --color=always $left $right
+
+# For git, use:
+GIT_EXTERNAL_DIFF='difft --color=always' git diff
 ```
 
 ## Installation
@@ -369,16 +376,3 @@ nvim -l tests/run.lua
 
 See [tests/README.md](./tests/README.md) for details.
 
-## Troubleshooting
-
-### No colors visible in diff output
-
-Ensure that the `difft` command is called with the `--color=always` flag. You can customize the command in the setup:
-
-```lua
-require("difft").setup({
-  command = "GIT_EXTERNAL_DIFF='difft --color=always' git diff",
-})
-```
-
-`difft.nvim` relies on ANSI color codes to render colored diffs. These codes must be inserted by `difft`.
