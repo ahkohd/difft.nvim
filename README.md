@@ -26,7 +26,8 @@ https://github.com/user-attachments/assets/04070894-71ec-4051-92ce-d3140827370d
 - Neovim 0.10+
 - [Difftastic](https://github.com/Wilfred/difftastic) (external diff tool)
 
-> [!IMPORTANT] `difft.nvim` requires ANSI color codes to render colored diffs.
+> [!IMPORTANT]
+> `difft.nvim` requires ANSI color codes to render colored diffs.
 > You **must** use the `--color=always` flag when calling `difft`, otherwise no colors will be visible in the diff output.
 
 ```bash
