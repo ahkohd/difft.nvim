@@ -1,6 +1,6 @@
 # Difft Tests
 
-This directory contains tests for the difft.nvim plugin.
+This directory contains tests for the `difft.nvim` plugin.
 
 ## Running Tests
 
@@ -11,7 +11,7 @@ These tests use a custom lightweight test runner (no external dependencies requi
 From the shell:
 
 ```bash
-nvim -l lua/dev/difft/tests/run.lua
+nvim -l tests/run.lua
 ```
 
 ## Test Structure
@@ -53,5 +53,5 @@ You can watch files and auto-run tests using a file watcher:
 
 ```bash
 # Using entr
-ls lua/dev/difft/**/*.lua | entr nvim -l lua/dev/difft/tests/run.lua
+ls **/*.lua | entr nvim -l tests/run.lua
 ```
