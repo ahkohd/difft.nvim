@@ -7,6 +7,7 @@ local repo_root = vim.fn.fnamemodify(script_dir, ":h")
 -- Add the plugin to the package path
 package.path = package.path
 	.. ";" .. repo_root .. "/lua/?.lua"
+	.. ";" .. repo_root .. "/lua/?/init.lua"
 	.. ";" .. repo_root .. "/tests/?.lua"
 
 -- Run the tests
