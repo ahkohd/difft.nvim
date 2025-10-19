@@ -15,6 +15,7 @@ local M = {}
 --- @field loading_message string Message to display while diff is loading
 --- @field header table File header configuration
 --- @field jump table File jump configuration: { enabled = boolean, ["<key>"] = "mode" }
+--- @field diff table Diff configuration: { highlights = { add, delete, change, info, hint, dim } }
 local config = {
 	keymaps = {
 		next = "<Down>",
@@ -54,6 +55,16 @@ local config = {
 		["<C-x>"] = "split",
 		["<C-t>"] = "tabedit",
 	},
+	diff = {
+		highlights = {
+			add = "DiffAdd", -- Highlight group for additions (green)
+			delete = "DiffDelete", -- Highlight group for deletions (red)
+			change = "DiffChange", -- Highlight group for changes (yellow)
+			info = "DiagnosticInfo", -- Highlight group for info (blue/cyan)
+			hint = "DiagnosticHint", -- Highlight group for hints (magenta)
+			dim = "Comment", -- Highlight group for dim text (gray/white)
+		},
+	},
 }
 
 --- Internal state for the diff viewer
@@ -78,24 +89,33 @@ local state = {
 }
 
 --- Map ANSI color codes to Neovim highlight groups
-local ansi_to_hl = {
-	["30"] = "Comment", -- Black/dark gray
-	["31"] = "DiffDelete", -- Red
-	["32"] = "DiffAdd", -- Green
-	["33"] = "DiffChange", -- Yellow
-	["34"] = "DiagnosticInfo", -- Blue
-	["35"] = "DiagnosticHint", -- Magenta
-	["36"] = "DiagnosticInfo", -- Cyan
-	["37"] = "Comment", -- White/light gray
-	["90"] = "Comment", -- Bright black/gray
-	["91"] = "DiffDelete", -- Bright red
-	["92"] = "DiffAdd", -- Bright green
-	["93"] = "DiffChange", -- Bright yellow
-	["94"] = "DiagnosticInfo", -- Bright blue
-	["95"] = "DiagnosticHint", -- Bright magenta
-	["96"] = "DiagnosticInfo", -- Bright cyan
-	["97"] = "Comment", -- Bright white
-}
+--- This is initialized with default values and updated by init_ansi_mapping()
+local ansi_to_hl = {}
+
+--- Initialize ANSI color mapping based on config
+local function init_ansi_mapping()
+	ansi_to_hl = {
+		["30"] = config.diff.highlights.dim, -- Black/dark gray
+		["31"] = config.diff.highlights.delete, -- Red
+		["32"] = config.diff.highlights.add, -- Green
+		["33"] = config.diff.highlights.change, -- Yellow
+		["34"] = config.diff.highlights.info, -- Blue
+		["35"] = config.diff.highlights.hint, -- Magenta
+		["36"] = config.diff.highlights.info, -- Cyan
+		["37"] = config.diff.highlights.dim, -- White/light gray
+		["90"] = config.diff.highlights.dim, -- Bright black/gray
+		["91"] = config.diff.highlights.delete, -- Bright red
+		["92"] = config.diff.highlights.add, -- Bright green
+		["93"] = config.diff.highlights.change, -- Bright yellow
+		["94"] = config.diff.highlights.info, -- Bright blue
+		["95"] = config.diff.highlights.hint, -- Bright magenta
+		["96"] = config.diff.highlights.info, -- Bright cyan
+		["97"] = config.diff.highlights.dim, -- Bright white
+	}
+end
+
+-- Initialize with default config values
+init_ansi_mapping()
 
 --- Setup custom header highlight group if configured
 local function setup_header_highlight()
@@ -1302,6 +1322,9 @@ end
 function M.setup(opts)
 	opts = opts or {}
 	config = vim.tbl_deep_extend("force", config, opts)
+
+	-- Initialize ANSI color mapping with configured highlights
+	init_ansi_mapping()
 
 	-- Setup custom header highlight if configured
 	setup_header_highlight()
