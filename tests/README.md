@@ -4,54 +4,88 @@ This directory contains tests for the `difft.nvim` plugin.
 
 ## Running Tests
 
-These tests use a custom lightweight test runner (no external dependencies required).
+These tests use a simple lightweight test runner (no external dependencies required).
 
 ### Running All Tests
 
 From the shell:
 
 ```bash
-nvim -l tests/run.lua
+# Run all lib tests
+for f in tests/lib/test_*.lua; do nvim -l "$f"; done
+```
+
+### Running Individual Tests
+
+```bash
+# Run specific test file
+nvim -l tests/lib/test_parser.lua
+nvim -l tests/lib/test_file_jump.lua
 ```
 
 ## Test Structure
 
-Tests are organized using a BDD-style syntax with a custom test runner:
+Tests use a simple table-based structure:
 
 ```lua
-local test = require("dev.difft.tests.test_runner")
-local describe = test.describe
-local it = test.it
-local assert = test.assert
-local before_each = test.before_each
-local after_each = test.after_each
+local tests = {}
+local passed = 0
+local failed = 0
 
-describe("component", function()
-  describe("function_name", function()
-    it("should do something", function()
-      -- test code
-      assert.are.equal(expected, actual)
-    end)
-  end)
-end)
+--- Test helper
+local function assert_eq(actual, expected, test_name)
+  if actual == expected then
+    passed = passed + 1
+    print("✓ " .. test_name)
+    return true
+  else
+    failed = failed + 1
+    print("✗ " .. test_name)
+    print("  Expected: " .. tostring(expected))
+    print("  Got:      " .. tostring(actual))
+    return false
+  end
+end
 
-test.run()  -- Don't forget to call this at the end
+--- Test 1: Description
+function tests.test_something()
+  local result = my_function()
+  assert_eq(result, expected, "Test description")
+end
+
+-- Run all tests
+for name, test_fn in pairs(tests) do
+  local ok, err = pcall(test_fn)
+  if not ok then
+    failed = failed + 1
+    print("✗ " .. name .. " (error)")
+    print("  " .. tostring(err))
+  end
+end
+
+if failed == 0 then
+  print("\n✓ All tests passed!")
+  os.exit(0)
+else
+  print("\n✗ Some tests failed")
+  os.exit(1)
+end
 ```
 
 ## Adding New Tests
 
-1. Create or update test files in `tests/` directory
-2. Import and use the custom test runner
-3. Use descriptive test names with "should" statements
+1. Create or update test files in `tests/lib/` directory
+2. Use the simple test structure above
+3. Use descriptive test function names: `function tests.test_descriptive_name()`
 4. Test both happy paths and edge cases
-5. Clean up resources in `after_each` hooks when needed
-6. Call `test.run()` at the end of the file
+5. Clean up resources (buffers, windows) when needed
+6. Run all tests in a `for` loop at the end
 
 ## Continuous Testing
 
 You can watch files and auto-run tests using a file watcher:
 
 ```bash
-# Using entr
-ls **/*.lua | entr nvim -l tests/run.lua
+# Using entr - run all lib tests
+find lua tests/lib -name '*.lua' | entr -c sh -c 'for f in tests/lib/test_*.lua; do nvim -l "$f" || exit 1; done'
 ```

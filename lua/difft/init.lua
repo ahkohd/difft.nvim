@@ -4,6 +4,13 @@
 --- @class Difft
 local M = {}
 
+-- Import lib modules
+local parser = require("difft.lib.parser")
+local renderer = require("difft.lib.renderer")
+local navigation = require("difft.lib.navigation")
+local buffer = require("difft.lib.buffer")
+local file_jump = require("difft.lib.file_jump")
+
 --- Default configuration options
 --- @class DifftConfig
 --- @field keymaps table Keybindings for diff navigation
@@ -90,34 +97,8 @@ local state = {
 	goal_column = nil,
 }
 
---- Map ANSI color codes to Neovim highlight groups
---- This is initialized with default values and updated by init_ansi_mapping()
-local ansi_to_hl = {}
-
---- Initialize ANSI color mapping based on config
-local function init_ansi_mapping()
-	ansi_to_hl = {
-		["30"] = config.diff.highlights.dim, -- Black/dark gray
-		["31"] = config.diff.highlights.delete, -- Red
-		["32"] = config.diff.highlights.add, -- Green
-		["33"] = config.diff.highlights.change, -- Yellow
-		["34"] = config.diff.highlights.info, -- Blue
-		["35"] = config.diff.highlights.hint, -- Magenta
-		["36"] = config.diff.highlights.info, -- Cyan
-		["37"] = config.diff.highlights.dim, -- White/light gray
-		["90"] = config.diff.highlights.dim, -- Bright black/gray
-		["91"] = config.diff.highlights.delete, -- Bright red
-		["92"] = config.diff.highlights.add, -- Bright green
-		["93"] = config.diff.highlights.change, -- Bright yellow
-		["94"] = config.diff.highlights.info, -- Bright blue
-		["95"] = config.diff.highlights.hint, -- Bright magenta
-		["96"] = config.diff.highlights.info, -- Bright cyan
-		["97"] = config.diff.highlights.dim, -- Bright white
-	}
-end
-
--- Initialize with default config values
-init_ansi_mapping()
+-- Initialize ANSI color mapping with default config values
+parser.init_ansi_mapping(config)
 
 --- Setup custom header highlight group if configured
 local function setup_header_highlight()
@@ -578,272 +559,43 @@ end
 --- @param line_text string The line text to parse
 --- @param cursor_col number|nil Optional cursor column (0-indexed), for two-column detection
 --- @return number|nil Line number if found, nil otherwise
-local function extract_line_number(line_text, cursor_col)
-	if not line_text or line_text == "" then
-		return nil
-	end
-
-	-- Skip PURE ellipsis lines (just dots without a number)
-	if line_text:match("^%s*%.%.+%s*$") then
-		return nil
-	end
-
-	-- If cursor position provided, try to detect two-column format
-	-- Format: "number content ... number content"
-	if cursor_col then
-		-- Try to find two separate "number + content" sections
-		-- Pattern: number at start, then after some content, another number appears
-		local left_num, left_end_pos = line_text:match("^%s*(%d+)%s+()")
-		if left_num then
-			-- Look for a second number that appears later in the line (potential right column)
-			-- Skip past the left content and look for: multiple spaces + number
-			-- We need at least 2 spaces as separator to distinguish from side-by-side numbers
-			local remaining = line_text:sub(left_end_pos)
-			local right_match_start, _, _, right_num = remaining:find("(%s%s+)(%d+)%s+")
-			if right_num then
-				-- Found two-column format: determine which column cursor is in
-				-- Calculate absolute position of right column start (1-indexed)
-				local right_col_start = left_end_pos - 1 + right_match_start
-				-- Convert cursor_col from 0-indexed (Neovim API) to 1-indexed (Lua strings)
-				local cursor_pos_1indexed = cursor_col + 1
-				if cursor_pos_1indexed >= right_col_start then
-					-- Cursor in right column
-					return tonumber(right_num)
-				else
-					-- Cursor in left column
-					return tonumber(left_num)
-				end
-			end
-		end
-	end
-
-	-- Handle ellipsis with number: ".. 20", "... 645", ".... 2000"
-	local ellipsis_num = line_text:match("^%s*%.%.+%s+(%d+)")
-	if ellipsis_num then
-		return tonumber(ellipsis_num)
-	end
-
-	-- Handle single dot with number (context line): ". 10", ". 123"
-	local single_dot_num = line_text:match("^%s*%.%s+(%d+)")
-	if single_dot_num then
-		return tonumber(single_dot_num)
-	end
-
-	-- Try to match two numbers at the start (side-by-side format): "580 642"
-	-- This is different from two-column - both numbers are at the line start
-	local first_num, second_num = line_text:match("^%s*(%d+)%s+(%d+)")
-	if first_num and second_num then
-		-- Prefer the second (later/right) number
-		return tonumber(second_num)
-	end
-
-	-- Single line number format: "6 import ..."
-	local single_num = line_text:match("^%s*(%d+)%s")
-	if single_num then
-		return tonumber(single_num)
-	end
-
-	return nil
-end
-
---- Find the nearest file header above the current line
---- Searches backwards through state.changes to find the most recent header
---- @param current_line number Line number (1-indexed) to search from
---- @return table|nil Header info {line, filename, language, step} or nil if not found
-local function find_header_above(current_line)
-	if #state.changes == 0 then
-		return nil
-	end
-
-	-- Search backwards through headers to find the most recent one before current_line
-	local nearest_header = nil
-	for _, header_info in ipairs(state.changes) do
-		if header_info.line < current_line then
-			nearest_header = header_info
-		else
-			-- Headers are in ascending order, so we can stop once we pass current_line
-			break
-		end
-	end
-
-	return nearest_header
-end
-
---- Parse first changed line number from diff content after a header
---- Looks for lines with green (DiffAdd) or red (DiffDelete) highlighting
---- @param buf number Buffer handle
---- @param start_line number Line number (1-indexed) to start scanning from
---- @return number|nil First line number found, or nil if not found
-local function parse_first_line_number(buf, start_line)
-	if not config.jump.enabled then
-		return nil
-	end
-
-	-- Scan up to 50 lines forward looking for highlighted changes
-	local max_lines = 50
-	local total_lines = vim.api.nvim_buf_line_count(buf)
-	local end_line = math.min(start_line + max_lines, total_lines)
-
-	for line_num = start_line, end_line do
-		-- Check if this line has DiffAdd or DiffDelete highlights using extmarks
-		local extmarks = vim.api.nvim_buf_get_extmarks(
-			buf,
-			state.ns,
-			{ line_num - 1, 0 },
-			{ line_num - 1, -1 },
-			{ details = true }
-		)
-
-		-- Look for extmarks with DiffAdd or DiffDelete highlighting
-		local is_changed_line = false
-		for _, mark in ipairs(extmarks) do
-			local details = mark[4]
-			if details and details.hl_group then
-				local hl = details.hl_group
-				-- Check if highlight is DiffAdd or DiffDelete (including formatted variants like DiffAdd_bold)
-				if hl:match("^DiffAdd") or hl:match("^DiffDelete") then
-					is_changed_line = true
-					break
-				end
-			end
-		end
-
-		-- If this is a changed line, extract the line number from the difftastic format
-		if is_changed_line then
-			local line = vim.api.nvim_buf_get_lines(buf, line_num - 1, line_num, false)[1]
-			if line then
-				-- After ANSI stripping, difftastic shows:
-				-- Single number at start: " 6     import { ..." (added/modified line)
-				-- Note: there may be leading whitespace before the line number
-				local line_number = line:match("^%s*(%d+)%s")
-				if line_number then
-					return tonumber(line_number)
-				end
-			end
-		end
-	end
-
-	return nil
-end
 
 --- Open file from header in specified mode
 --- @param mode string Open mode: "edit", "vsplit", "split", or "tabedit"
 local function open_file(mode)
+	if not config.jump.enabled then
+		return
+	end
+
 	local cursor = vim.api.nvim_win_get_cursor(state.win)
 	local current_line = cursor[1]
+	local cursor_col = cursor[2]
 
-	-- Check if current line is a header
-	local header_info = nil
-	local line_num = nil
-	for _, info in ipairs(state.changes) do
-		if info.line == current_line then
-			header_info = info
-			break
-		end
-	end
-
-	if header_info then
-		-- On a header line - use existing behavior (find first changed line)
-		line_num = parse_first_line_number(state.buf, current_line + 1)
-	else
-		-- Not on a header - extract line number from current line and find header above
-		local line_text = vim.api.nvim_buf_get_lines(state.buf, current_line - 1, current_line, false)[1]
-		if line_text then
-			-- Pass cursor column (cursor[2]) for two-column detection
-			line_num = extract_line_number(line_text, cursor[2])
-			if line_num then
-				header_info = find_header_above(current_line)
-			end
-		end
-	end
-
-	if not header_info then
-		return
-	end
-
-	-- Get filename and resolve path
-	local filename = header_info.filename
-	local filepath = nil
-
-	-- Try multiple resolution strategies:
-	-- 1. Check if file exists relative to current working directory
-	if vim.fn.filereadable(filename) == 1 then
-		-- File exists relative to CWD, make it absolute
-		filepath = vim.fn.fnamemodify(filename, ":p")
-	else
-		-- 2. Find VCS root and try relative to that
-		local found = vim.fs.find(".git", { path = vim.fn.getcwd(), upward = true })
-		if #found == 0 then
-			found = vim.fs.find(".jj", { path = vim.fn.getcwd(), upward = true })
-		end
-
-		if #found > 0 then
-			-- Get the directory containing .git or .jj
-			local root_dir = vim.fs.dirname(found[1])
-			local root_path = root_dir .. "/" .. filename
-
-			if vim.fn.filereadable(root_path) == 1 then
-				filepath = root_path
-			end
-		end
-	end
-
-	-- Check if file was found
-	if not filepath then
-		vim.notify("File not found: " .. filename, vim.log.levels.WARN)
-		return
-	end
-
-	-- If in floating mode, we need to switch context to open file outside the float
+	-- If in floating mode, save cursor position before opening file
+	local on_before_open = nil
 	if state.is_floating then
-		-- Save cursor position before hiding
-		if state.win and vim.api.nvim_win_is_valid(state.win) then
-			state.last_cursor = vim.api.nvim_win_get_cursor(state.win)
-			vim.api.nvim_win_hide(state.win)
-			state.win = nil -- Clear win reference so it's detected as hidden
-		end
-
-		-- For splits, we need to ensure we're working in a regular window first
-		-- Get the first valid non-floating window, or create one
-		local target_win = nil
-		for _, win in ipairs(vim.api.nvim_list_wins()) do
-			local win_config = vim.api.nvim_win_get_config(win)
-			if win_config.relative == "" then -- Not a floating window
-				target_win = win
-				break
+		on_before_open = function()
+			-- Save cursor position before hiding
+			if state.win and vim.api.nvim_win_is_valid(state.win) then
+				state.last_cursor = vim.api.nvim_win_get_cursor(state.win)
+				vim.api.nvim_win_hide(state.win)
+				state.win = nil -- Clear win reference so it's detected as hidden
 			end
-		end
-
-		-- If no regular window exists, create one by editing a buffer
-		if not target_win then
-			vim.cmd("enew")
-		else
-			vim.api.nvim_set_current_win(target_win)
 		end
 	end
 
-	-- Open file with specified mode
-	vim.cmd(mode .. " " .. vim.fn.fnameescape(filepath))
-
-	-- Jump to line number if found
-	if line_num then
-		-- Validate that line number exists in the opened file
-		vim.schedule(function()
-			local current_buf = vim.api.nvim_get_current_buf()
-			local total_lines = vim.api.nvim_buf_line_count(current_buf)
-
-			if line_num <= total_lines then
-				pcall(function()
-					local current_win = vim.api.nvim_get_current_win()
-					if vim.api.nvim_win_is_valid(current_win) then
-						vim.api.nvim_win_set_cursor(current_win, { line_num, 0 })
-						vim.cmd("normal! zz")
-					end
-				end)
-			end
-			-- If line is out of bounds, silently do nothing (file might have changed since diff)
-		end)
-	end
+	-- Use lib/file_jump to open file
+	file_jump.open_file_from_diff({
+		buf = state.buf,
+		win = state.win,
+		headers = state.changes,
+		namespace = state.ns,
+		current_line = current_line,
+		cursor_col = cursor_col,
+		mode = mode,
+		on_before_open = on_before_open,
+		is_floating = state.is_floating,
+	})
 end
 
 --- Close the diff window and cleanup state
@@ -1007,40 +759,21 @@ local function load_diff(cmd)
 				end
 
 				-- Parse ANSI codes and clean text
-					local clean_lines = {}
-					local all_highlights = {}
-					for i, line in ipairs(data) do
-						-- Skip ANSI parsing if line has no escape codes
-						if line:find("\27%[") then
-							local clean_text, highlights = parse_ansi_line(line)
-							clean_lines[i] = clean_text
-							all_highlights[i] = highlights
-						else
-							clean_lines[i] = line
-						end
-					end
+					-- Use lib/buffer to setup the buffer with ANSI parsing, rendering, and navigation
+					local result = buffer.setup_from_ansi_lines(buf, data, config, state.ns, {
+						renderer_opts = {
+							line_number_coloring = true,
+							empty_line_support = true,
+						},
+						navigation = {
+							enabled = true,
+							keymaps = config.keymaps,
+							auto_jump = false, -- We handle cursor positioning manually below
+						},
+					})
 
-					-- Set clean buffer contents
-					vim.api.nvim_buf_set_lines(buf, 0, -1, false, clean_lines)
-
-					-- Apply all highlights
-					for i, highlights in pairs(all_highlights) do
-						apply_line_highlights(buf, i - 1, highlights, clean_lines[i])
-					end
-
-					-- Parse changes from clean lines
-					state.changes = parse_changes(clean_lines)
-
-					-- Apply custom header content if configured
-					local has_custom_highlights = apply_custom_header_content(buf)
-
-					-- Apply header highlighting to all headers
-					for _, header_info in ipairs(state.changes) do
-						local line_num = header_info.line
-						-- Re-read line text in case it was modified by custom content
-						local line_text = vim.api.nvim_buf_get_lines(buf, line_num - 1, line_num, false)[1] or ""
-						apply_header_highlight(buf, line_num, line_text, has_custom_highlights[line_num])
-					end
+					-- Store headers for compatibility with existing code
+					state.changes = result.headers
 
 					-- Make buffer read-only
 					vim.api.nvim_buf_set_option(buf, "modifiable", false)
@@ -1058,7 +791,6 @@ local function load_diff(cmd)
 						vim.cmd("normal! zz")
 					elseif config.auto_jump and #state.changes > 0 then
 						-- Jump to first change if available and auto_jump is enabled
-						state.current_change = 1
 						vim.api.nvim_win_set_cursor(win, { state.changes[1].line, 0 })
 						vim.cmd("normal! zz")
 					else
@@ -1111,38 +843,11 @@ local function resize_float()
 	vim.api.nvim_win_set_config(state.win, win_config)
 end
 
---- Setup buffer-local keymaps for diff navigation
+--- Setup buffer-local keymaps for non-navigation actions (close, refresh, jump)
+--- Navigation keymaps (next/prev/first/last) are handled by lib/navigation.setup()
 --- @param buf number Buffer handle
 --- @param is_floating boolean Whether this is a floating window
 local function setup_keymaps(buf, is_floating)
-	vim.keymap.set("n", config.keymaps.next, next_change, {
-		buffer = buf,
-		noremap = true,
-		silent = true,
-		desc = "Next change",
-	})
-
-	vim.keymap.set("n", config.keymaps.prev, prev_change, {
-		buffer = buf,
-		noremap = true,
-		silent = true,
-		desc = "Previous change",
-	})
-
-	vim.keymap.set("n", config.keymaps.first, first_change, {
-		buffer = buf,
-		noremap = true,
-		silent = true,
-		desc = "First change",
-	})
-
-	vim.keymap.set("n", config.keymaps.last, last_change, {
-		buffer = buf,
-		noremap = true,
-		silent = true,
-		desc = "Last change",
-	})
-
 	-- Only add close keymap for floating windows
 	if is_floating then
 		vim.keymap.set("n", config.keymaps.close, close_diff, {
@@ -1345,7 +1050,7 @@ function M.setup(opts)
 	config = vim.tbl_deep_extend("force", config, opts)
 
 	-- Initialize ANSI color mapping with configured highlights
-	init_ansi_mapping()
+	parser.init_ansi_mapping(config)
 
 	-- Setup custom header highlight if configured
 	setup_header_highlight()
@@ -1354,7 +1059,7 @@ function M.setup(opts)
 	vim.api.nvim_create_autocmd("ColorScheme", {
 		group = vim.api.nvim_create_augroup("difft_colorscheme", { clear = true }),
 		callback = function()
-			state.hl_cache = {}
+			parser.clear_hl_cache()
 			-- Recreate header highlight on colorscheme change
 			setup_header_highlight()
 		end,
@@ -1370,6 +1075,16 @@ function M.setup(opts)
 			end
 		end,
 	})
+
+	-- Setup integrations if enabled
+	if config.integrations.diffview.enabled then
+		local ok, diffview_integration = pcall(require, "difft.extensions.diffview")
+		if ok then
+			diffview_integration.setup()
+		else
+			vim.notify("Failed to load diffview integration", vim.log.levels.WARN)
+		end
+	end
 end
 
 -- Store globally for access
@@ -1382,13 +1097,32 @@ _G.Difft = {
 	refresh = M.refresh,
 }
 
+--- Get current config (always returns the latest config after setup)
+--- @return DifftConfig
+function M.get_config()
+	return config
+end
+
 -- Expose internal functions for testing
+-- Expose lib modules for testing and internal use (e.g., diffview extension)
+M.lib = {
+	parser = parser,
+	renderer = renderer,
+	navigation = navigation,
+	buffer = buffer,
+}
+
+-- Legacy _test export for backwards compatibility with existing code
 M._test = {
+	parse_ansi_line = parser.parse_ansi_line,
 	parse_changes = parse_changes,
-	parse_first_line_number = parse_first_line_number,
-	parse_ansi_line = parse_ansi_line,
-	extract_line_number = extract_line_number,
-	find_header_above = find_header_above,
+	parse_first_line_number = function(buf, start_line)
+		return file_jump.parse_first_line_number(buf, start_line, state.ns)
+	end,
+	extract_line_number = file_jump.extract_line_number,
+	find_header_above = function(current_line)
+		return file_jump.find_header_above(state.changes, current_line)
+	end,
 	state = state,
 	config = config,
 }
