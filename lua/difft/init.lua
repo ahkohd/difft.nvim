@@ -77,6 +77,7 @@ local config = {
 --- @field hl_cache table Cache for dynamically created highlight groups
 --- @field is_floating boolean Whether the current diff is in a floating window
 --- @field last_cursor table|nil Last cursor position {line, col} - saved on hide/refresh, restored on show/refresh
+--- @field goal_column number|nil Desired column position for vertical navigation (Vim-style)
 local state = {
 	buf = nil,
 	win = nil,
@@ -86,6 +87,7 @@ local state = {
 	hl_cache = {},
 	is_floating = false,
 	last_cursor = nil,
+	goal_column = nil,
 }
 
 --- Map ANSI color codes to Neovim highlight groups
@@ -491,6 +493,25 @@ local function parse_changes(lines)
 	return changes
 end
 
+--- Set cursor position while preserving goal column (Vim-style behavior)
+--- @param line number Target line number
+local function set_cursor_with_goal_column(line)
+	-- Always update goal_column from current cursor position
+	-- This picks up manual cursor movements (h, l, $, ^, etc.) between navigations
+	local current_pos = vim.api.nvim_win_get_cursor(state.win)
+	state.goal_column = current_pos[2]
+
+	-- Get the length of the target line (0-indexed column count)
+	local line_text = vim.api.nvim_buf_get_lines(state.buf, line - 1, line, false)[1] or ""
+	local line_length = #line_text
+
+	-- Clamp goal column to line length
+	local col = math.min(state.goal_column, line_length)
+
+	-- Set cursor position
+	vim.api.nvim_win_set_cursor(state.win, { line, col })
+end
+
 --- Navigate to next file change
 local function next_change()
 	if #state.changes == 0 then
@@ -503,7 +524,7 @@ local function next_change()
 	end
 
 	local line = state.changes[state.current_change].line
-	vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+	set_cursor_with_goal_column(line)
 	vim.cmd("normal! zz")
 end
 
@@ -519,7 +540,7 @@ local function prev_change()
 	end
 
 	local line = state.changes[state.current_change].line
-	vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+	set_cursor_with_goal_column(line)
 	vim.cmd("normal! zz")
 end
 
@@ -531,7 +552,7 @@ local function first_change()
 
 	state.current_change = 1
 	local line = state.changes[state.current_change].line
-	vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+	set_cursor_with_goal_column(line)
 	vim.cmd("normal! zz")
 end
 
@@ -543,7 +564,7 @@ local function last_change()
 
 	state.current_change = #state.changes
 	local line = state.changes[state.current_change].line
-	vim.api.nvim_win_set_cursor(state.win, { line, 0 })
+	set_cursor_with_goal_column(line)
 	vim.cmd("normal! zz")
 end
 
