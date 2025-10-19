@@ -283,6 +283,36 @@ highlight = {
 }
 ```
 
+### Diff Highlights
+
+Customize the highlight groups used for diff colors:
+
+```lua
+diff = {
+  highlights = {
+    add = "DiffAdd",           -- Additions (green) - ANSI codes 32, 92
+    delete = "DiffDelete",     -- Deletions (red) - ANSI codes 31, 91
+    change = "DiffChange",     -- Changes (yellow) - ANSI codes 33, 93
+    info = "DiagnosticInfo",   -- Info (blue/cyan) - ANSI codes 34, 94, 36, 96
+    hint = "DiagnosticHint",   -- Hints (magenta) - ANSI codes 35, 95
+    dim = "Comment",           -- Dim text (gray/white) - ANSI codes 30, 90, 37, 97
+  },
+}
+```
+
+Example - use any highlight group, including creative choices like devicon colors for visual consistency:
+
+```lua
+require("difft").setup({
+  diff = {
+    highlights = {
+      add = "DevIconBashrc",    -- Green from bashrc icon
+      delete = "DevIconGulpfile", -- Red from gulpfile icon
+    },
+  },
+})
+```
+
 ### Other Options
 
 ```lua
@@ -363,11 +393,16 @@ When viewing a diff:
 
 The plugin uses these highlight groups for diff content:
 
-- `DiffAdd` - Added lines
-- `DiffDelete` - Deleted lines
-- `DiffChange` - Changed lines
-- `DifftFileHeader` - File headers (customizable)
+- `DiffAdd` - Added lines (customizable via `diff.highlights.add`)
+- `DiffDelete` - Deleted lines (customizable via `diff.highlights.delete`)
+- `DiffChange` - Changed lines (customizable via `diff.highlights.change`)
+- `DiagnosticInfo` - Info text (customizable via `diff.highlights.info`)
+- `DiagnosticHint` - Hint text (customizable via `diff.highlights.hint`)
+- `Comment` - Dim text (customizable via `diff.highlights.dim`)
+- `DifftFileHeader` - File headers (customizable via `header.highlight`)
 - `DifftFileHeaderBg` - Header background for full-width mode
+
+See the [Diff Highlights](#diff-highlights) configuration section for customization options.
 
 ## Testing
 
