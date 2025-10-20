@@ -319,9 +319,9 @@ diff = {
 }
 ```
 
-**Note:** ANSI bold/italic/dim formatting will still apply on top of your custom colors.
+The ANSI bold, italic, and dim styles still layer on top of your custom color settings.
 
-**Preset: GitHub diff colors** (familiar, easy on the eyes):
+**Example:** GitHub-style diff colors — familiar and easy on the eyes:
 ```lua
 require("difft").setup({
   diff = {
@@ -333,7 +333,7 @@ require("difft").setup({
 })
 ```
 
-Example - use devicon colors for visual consistency:
+**Example:** Match your diffs to Devicon colors:
 
 ```lua
 require("difft").setup({
