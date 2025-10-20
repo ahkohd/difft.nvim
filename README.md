@@ -321,6 +321,18 @@ diff = {
 
 **Note:** ANSI bold/italic/dim formatting will still apply on top of your custom colors.
 
+**Preset: GitHub diff colors** (familiar, easy on the eyes):
+```lua
+require("difft").setup({
+  diff = {
+    highlights = {
+      add = { bg = "#d6f5d6", fg = "#1a4d1a" },
+      delete = { bg = "#ffe5e5", fg = "#6b1f1f" },
+    },
+  },
+})
+```
+
 Example - use devicon colors for visual consistency:
 
 ```lua
