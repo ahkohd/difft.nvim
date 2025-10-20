@@ -1048,6 +1048,16 @@ function M.refresh()
 	refresh_diff()
 end
 
+--- Open the diff viewer in a dedicated tab
+--- Shows a file list on the left and diff pane on the right
+--- @param opts? table Options: { staged = bool, unstaged = bool }
+--- @usage require("difft").open_viewer()
+--- @usage require("difft").open_viewer({ staged = true, unstaged = false })
+function M.open_viewer(opts)
+	local viewer = require("difft.viewer")
+	viewer.open(config, opts)
+end
+
 --- Setup the plugin with custom configuration
 --- Merges user config with defaults and sets up autocommands
 --- @param opts DifftConfig|nil User configuration options
@@ -1136,6 +1146,30 @@ function M.setup(opts)
 			end
 		end,
 	})
+
+	-- Register user commands
+	vim.api.nvim_create_user_command("DifftOpenViewer", function(cmd_opts)
+		local opts = {}
+		-- Parse command arguments
+		-- :DifftOpenViewer staged - show only staged
+		-- :DifftOpenViewer unstaged - show only unstaged
+		-- :DifftOpenViewer - show both (default)
+		local args = vim.split(cmd_opts.args, "%s+", { trimempty = true })
+		if #args > 0 then
+			if args[1] == "staged" then
+				opts = { staged = true, unstaged = false }
+			elseif args[1] == "unstaged" then
+				opts = { staged = false, unstaged = true }
+			end
+		end
+		M.open_viewer(opts)
+	end, {
+		desc = "Open difft viewer in a dedicated tab",
+		nargs = "?",
+		complete = function()
+			return { "staged", "unstaged" }
+		end,
+	})
 end
 
 -- Store globally for access
@@ -1146,6 +1180,7 @@ _G.Difft = {
 	exists = M.exists,
 	is_visible = M.is_visible,
 	refresh = M.refresh,
+	open_viewer = M.open_viewer,
 }
 
 --- Get current config (always returns the latest config after setup)
