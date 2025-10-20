@@ -321,7 +321,7 @@ diff = {
 
 The ANSI bold, italic, and dim styles still layer on top of your custom color settings.
 
-**Example:** GitHub-style diff colors — familiar and easy on the eyes:
+**Example:** GitHub-style diff colors, familiar and easy on the eyes:
 ```lua
 require("difft").setup({
   diff = {
