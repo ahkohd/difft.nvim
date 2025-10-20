@@ -97,8 +97,60 @@ local state = {
 	goal_column = nil,
 }
 
--- Initialize ANSI color mapping with default config values
-parser.init_ansi_mapping(config)
+--- Normalize diff highlights - convert table configs to highlight groups
+--- @param highlights table User highlight config (string or table values)
+--- @return table Normalized config with group name strings
+local function normalize_diff_highlights(highlights)
+	local normalized = {}
+
+	for key, value in pairs(highlights) do
+		if type(value) == "string" then
+			-- Already a group name, use as-is
+			normalized[key] = value
+		elseif type(value) == "table" then
+			-- Create a custom highlight group
+			local group_name = "DifftAnsi" .. key:sub(1,1):upper() .. key:sub(2)  -- e.g., "DifftAnsiAdd"
+
+			-- Handle link
+			if value.link then
+				vim.api.nvim_set_hl(0, group_name, { link = value.link })
+				normalized[key] = group_name
+				goto continue
+			end
+
+			-- Handle direct colors
+			local hl_opts = {}
+			if value.fg then
+				hl_opts.fg = value.fg
+			end
+			if value.bg then
+				hl_opts.bg = value.bg
+			end
+
+			-- Set the highlight group (this will overwrite any existing definition)
+			if next(hl_opts) then
+				-- Clear any existing link first
+				vim.api.nvim_set_hl(0, group_name, {})
+				vim.api.nvim_set_hl(0, group_name, hl_opts)
+				normalized[key] = group_name
+			else
+				-- No valid properties, skip
+				normalized[key] = nil
+			end
+
+			::continue::
+		end
+	end
+
+	return normalized
+end
+
+-- Normalize diff highlights and initialize ANSI color mapping
+local normalized_highlights = normalize_diff_highlights(config.diff.highlights)
+local normalized_config = vim.tbl_deep_extend("force", config, {
+	diff = { highlights = normalized_highlights }
+})
+parser.init_ansi_mapping(normalized_config)
 
 --- Setup custom header highlight group if configured
 local function setup_header_highlight()
@@ -1049,8 +1101,12 @@ function M.setup(opts)
 	opts = opts or {}
 	config = vim.tbl_deep_extend("force", config, opts)
 
-	-- Initialize ANSI color mapping with configured highlights
-	parser.init_ansi_mapping(config)
+	-- Normalize diff highlights and initialize ANSI color mapping
+	local normalized_highlights = normalize_diff_highlights(config.diff.highlights)
+	local normalized_config = vim.tbl_deep_extend("force", config, {
+		diff = { highlights = normalized_highlights }
+	})
+	parser.init_ansi_mapping(normalized_config)
 
 	-- Setup custom header highlight if configured
 	setup_header_highlight()
@@ -1060,7 +1116,12 @@ function M.setup(opts)
 		group = vim.api.nvim_create_augroup("difft_colorscheme", { clear = true }),
 		callback = function()
 			parser.clear_hl_cache()
-			-- Recreate header highlight on colorscheme change
+			-- Recreate custom highlights on colorscheme change
+			local norm_highlights = normalize_diff_highlights(config.diff.highlights)
+			local norm_config = vim.tbl_deep_extend("force", config, {
+				diff = { highlights = norm_highlights }
+			})
+			parser.init_ansi_mapping(norm_config)
 			setup_header_highlight()
 		end,
 	})
@@ -1075,16 +1136,6 @@ function M.setup(opts)
 			end
 		end,
 	})
-
-	-- Setup integrations if enabled
-	if config.integrations.diffview.enabled then
-		local ok, diffview_integration = pcall(require, "difft.extensions.diffview")
-		if ok then
-			diffview_integration.setup()
-		else
-			vim.notify("Failed to load diffview integration", vim.log.levels.WARN)
-		end
-	end
 end
 
 -- Store globally for access

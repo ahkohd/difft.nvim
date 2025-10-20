@@ -285,8 +285,9 @@ highlight = {
 
 ### Diff Highlights
 
-Customize the highlight groups used for diff colors:
+Customize the highlight groups used for diff colors. Supports both **string** (group name) and **table** (color object) values:
 
+**String values (highlight group names):**
 ```lua
 diff = {
   highlights = {
@@ -300,7 +301,27 @@ diff = {
 }
 ```
 
-Example - use any highlight group, including creative choices like devicon colors for visual consistency:
+**Table values (color objects):**
+```lua
+diff = {
+  highlights = {
+    -- Direct colors
+    add = {fg = "#00ff00"},
+    delete = {fg = "#ff0000", bg = "#300000"},
+
+    -- Link to existing group
+    change = {link = "WarningMsg"},
+
+    -- Mix and match
+    info = "DiagnosticInfo",  -- String
+    hint = {fg = "#c678dd"},  -- Color object
+  },
+}
+```
+
+**Note:** ANSI bold/italic/dim formatting will still apply on top of your custom colors.
+
+Example - use devicon colors for visual consistency:
 
 ```lua
 require("difft").setup({
