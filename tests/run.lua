@@ -1,5 +1,7 @@
 #!/usr/bin/env nvim -l
 
+-- luacheck: globals vim
+
 -- Get the script directory
 local script_dir = vim.fn.fnamemodify(debug.getinfo(1).source:sub(2), ":h")
 local repo_root = vim.fn.fnamemodify(script_dir, ":h")
