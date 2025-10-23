@@ -34,8 +34,7 @@ function M.check()
 	if ok then
 		vim.health.ok("difft.nvim module loaded successfully")
 
-		-- Check configuration
-		if difft._test and difft._test.config then
+		if difft.get_config then
 			vim.health.info("Configuration initialized")
 		end
 	else

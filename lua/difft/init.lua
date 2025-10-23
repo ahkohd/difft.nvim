@@ -4,12 +4,14 @@
 --- @class Difft
 local M = {}
 
--- Import lib modules
 local parser = require("difft.lib.parser")
 local renderer = require("difft.lib.renderer")
 local navigation = require("difft.lib.navigation")
 local buffer = require("difft.lib.buffer")
 local file_jump = require("difft.lib.file_jump")
+local highlight = require("difft.lib.highlight")
+
+highlight.setup_difft_highlights()
 
 --- Default configuration options
 --- @class DifftConfig
@@ -42,7 +44,6 @@ local config = {
 	},
 	command = "jj diff --no-pager",
 	auto_jump = true,
-	-- nil (buffer), "float", or "ivy_taller"
 	layout = nil,
 	no_diff_message = "No changes found",
 	loading_message = "Loading diff...",
@@ -63,14 +64,7 @@ local config = {
 		["<C-t>"] = "tabedit",
 	},
 	diff = {
-		highlights = {
-			add = "DiffAdd", -- Highlight group for additions (green)
-			delete = "DiffDelete", -- Highlight group for deletions (red)
-			change = "DiffChange", -- Highlight group for changes (yellow)
-			info = "DiagnosticInfo", -- Highlight group for info (blue/cyan)
-			hint = "DiagnosticHint", -- Highlight group for hints (magenta)
-			dim = "Comment", -- Highlight group for dim text (gray/white)
-		},
+		highlights = highlight.build_default_diff_highlights(),
 	},
 }
 
@@ -97,60 +91,14 @@ local state = {
 	goal_column = nil,
 }
 
---- Normalize diff highlights - convert table configs to highlight groups
---- @param highlights table User highlight config (string or table values)
---- @return table Normalized config with group name strings
-local function normalize_diff_highlights(highlights)
-	local normalized = {}
-
-	for key, value in pairs(highlights) do
-		if type(value) == "string" then
-			-- Already a group name, use as-is
-			normalized[key] = value
-		elseif type(value) == "table" then
-			-- Create a custom highlight group
-			local group_name = "DifftAnsi" .. key:sub(1,1):upper() .. key:sub(2)  -- e.g., "DifftAnsiAdd"
-
-			-- Handle link
-			if value.link then
-				vim.api.nvim_set_hl(0, group_name, { link = value.link })
-				normalized[key] = group_name
-				goto continue
-			end
-
-			-- Handle direct colors
-			local hl_opts = {}
-			if value.fg then
-				hl_opts.fg = value.fg
-			end
-			if value.bg then
-				hl_opts.bg = value.bg
-			end
-
-			-- Set the highlight group (this will overwrite any existing definition)
-			if next(hl_opts) then
-				-- Clear any existing link first
-				vim.api.nvim_set_hl(0, group_name, {})
-				vim.api.nvim_set_hl(0, group_name, hl_opts)
-				normalized[key] = group_name
-			else
-				-- No valid properties, skip
-				normalized[key] = nil
-			end
-
-			::continue::
-		end
-	end
-
-	return normalized
+--- Get the active config (normalized if setup() was called, otherwise default)
+--- @return table Active configuration
+local function get_active_config()
+	return M._normalized_config or config
 end
 
--- Normalize diff highlights and initialize ANSI color mapping
-local normalized_highlights = normalize_diff_highlights(config.diff.highlights)
-local normalized_config = vim.tbl_deep_extend("force", config, {
-	diff = { highlights = normalized_highlights }
-})
-parser.init_ansi_mapping(normalized_config)
+--- Track which highlight keys were provided by user (not defaults)
+local user_provided_highlights = {}
 
 --- Setup custom header highlight group if configured
 local function setup_header_highlight()
@@ -159,10 +107,8 @@ local function setup_header_highlight()
 		return
 	end
 
-	-- Check if user wants to link to another highlight group (simple link)
 	if hl_config.link then
 		vim.api.nvim_set_hl(0, "DifftFileHeader", { link = hl_config.link })
-		-- Create background-only version for full_width
 		local linked_hl = vim.api.nvim_get_hl(0, { name = hl_config.link, link = false })
 		if linked_hl.bg then
 			vim.api.nvim_set_hl(0, "DifftFileHeaderBg", { bg = linked_hl.bg })
@@ -170,46 +116,37 @@ local function setup_header_highlight()
 		return
 	end
 
-	-- Create highlight group with custom colors or linked colors
 	local hl_opts = {}
 	local bg_only = {}
 
-	-- Handle fg (can be a color string or { link = "Group" })
 	if hl_config.fg then
 		if type(hl_config.fg) == "table" and hl_config.fg.link then
-			-- Link fg to another highlight group
 			local linked_hl = vim.api.nvim_get_hl(0, { name = hl_config.fg.link })
 			if linked_hl.fg then
 				hl_opts.fg = linked_hl.fg
 			end
 		else
-			-- Direct color value
 			hl_opts.fg = hl_config.fg
 		end
 	end
 
-	-- Handle bg (can be a color string or { link = "Group" })
 	if hl_config.bg then
 		if type(hl_config.bg) == "table" and hl_config.bg.link then
-			-- Link bg to another highlight group
 			local linked_hl = vim.api.nvim_get_hl(0, { name = hl_config.bg.link })
 			if linked_hl.bg then
 				hl_opts.bg = linked_hl.bg
 				bg_only.bg = linked_hl.bg
 			end
 		else
-			-- Direct color value
 			hl_opts.bg = hl_config.bg
 			bg_only.bg = hl_config.bg
 		end
 	end
 
-	-- Create main highlight with both fg and bg
 	if next(hl_opts) then
 		vim.api.nvim_set_hl(0, "DifftFileHeader", hl_opts)
 	end
 
-	-- Create background-only version for full_width
 	if next(bg_only) then
 		vim.api.nvim_set_hl(0, "DifftFileHeaderBg", bg_only)
 	end
@@ -258,273 +195,13 @@ local function get_ivy_taller_layout()
 end
 
 --- Get or create a highlight group with formatting attributes
---- Dynamically creates highlight groups that inherit from base with bold/italic
+--- Dynamically creates highlight groups that inherit from base with bold/italic/underline
 --- @param base_hl string Base highlight group name
 --- @param bold boolean Apply bold formatting
 --- @param italic boolean Apply italic formatting
 --- @param dim boolean Apply dim formatting (handled via base_hl)
+--- @param underline boolean Apply underline formatting
 --- @return string Highlight group name
-local function get_highlight_with_format(base_hl, bold, italic, dim)
-	if not bold and not italic and not dim then
-		return base_hl
-	end
-
-	-- Create a unique key for this combination
-	local key = base_hl .. (bold and "_bold" or "") .. (italic and "_italic" or "") .. (dim and "_dim" or "")
-
-	-- Return cached highlight if it exists
-	if state.hl_cache[key] then
-		return state.hl_cache[key]
-	end
-
-	-- Get the base highlight properties
-	local base_props = vim.api.nvim_get_hl(0, { name = base_hl })
-
-	-- Add formatting attributes
-	-- Only set attributes that are explicitly enabled (true)
-	-- nil or false means "inherit from base", so we don't override
-	local format_attrs = {}
-	if bold then
-		format_attrs.bold = true
-	end
-	if italic then
-		format_attrs.italic = true
-	end
-	-- Dim is handled by using Comment for base_hl, so we don't need to set it here
-
-	local new_props = vim.tbl_extend("force", base_props, format_attrs)
-
-	-- Create the new highlight group
-	vim.api.nvim_set_hl(0, key, new_props)
-
-	-- Cache it
-	state.hl_cache[key] = key
-
-	return key
-end
-
---- Parse ANSI escape codes from a line and return clean text + highlights
---- Extracts ANSI color codes and formatting, returns clean text and highlight info
---- @param line string Raw line with ANSI escape codes
---- @return string clean_text Text with ANSI codes stripped
---- @return table highlights List of highlight regions with col, length, and hl_group
-local function parse_ansi_line(line)
-	local text_parts = {}
-	local highlights = {}
-	local current_hl = nil
-	local bold = false
-	local italic = false
-	local dim = false
-	local col = 0
-	local pos = 1
-
-	while pos <= #line do
-		-- Try to match ANSI escape sequence: ESC[<numbers>m
-		local esc_start, esc_end, codes = line:find("\27%[([%d;]+)m", pos)
-
-		if not esc_start then
-			-- No more escape codes, append rest of line
-			local text_chunk = line:sub(pos)
-			if #text_chunk > 0 then
-				table.insert(text_parts, text_chunk)
-				if current_hl then
-					table.insert(highlights, {
-						col = col,
-						length = #text_chunk,
-						hl_group = get_highlight_with_format(current_hl, bold, italic, dim),
-					})
-				end
-			end
-			break
-		end
-
-		-- Append text before escape code
-		local text_chunk = line:sub(pos, esc_start - 1)
-		if #text_chunk > 0 then
-			table.insert(text_parts, text_chunk)
-			if current_hl then
-				table.insert(highlights, {
-					col = col,
-					length = #text_chunk,
-					hl_group = get_highlight_with_format(current_hl, bold, italic, dim),
-				})
-			end
-			col = col + #text_chunk
-		end
-
-		-- Parse the color code(s)
-		for code in codes:gmatch("%d+") do
-			if code == "0" then
-				-- Reset all
-				current_hl = nil
-				bold = false
-				italic = false
-				dim = false
-			elseif code == "1" then
-				bold = true
-			elseif code == "2" then
-				dim = true
-				-- Also set to Comment if no other color is set
-				if not current_hl then
-					current_hl = "Comment"
-				end
-			elseif code == "3" then
-				italic = true
-			elseif ansi_to_hl[code] then
-				current_hl = ansi_to_hl[code]
-			end
-		end
-
-		pos = esc_end + 1
-	end
-
-	return table.concat(text_parts), highlights
-end
-
---- Apply highlights to a buffer line using extmarks
---- Sets both gutter line number color and text highlights
---- @param buf number Buffer handle
---- @param line_num number Line number (0-indexed)
---- @param highlights table List of highlight regions from parse_ansi_line
---- @param line_text string Clean text of the line
-local function apply_line_highlights(buf, line_num, highlights, line_text)
-	-- Determine line number color based on line type
-	-- Check if highlight group starts with a diff type (handles formatted variants)
-	local line_number_hl = nil
-	for _, hl in ipairs(highlights) do
-		local hl_group = hl.hl_group
-		if hl_group:find("^DiffAdd") then
-			line_number_hl = "DiffAdd"
-			break
-		elseif hl_group:find("^DiffDelete") then
-			line_number_hl = "DiffDelete"
-			break
-		elseif hl_group:find("^DiffChange") then
-			line_number_hl = "DiffChange"
-			break
-		end
-	end
-
-	-- Set Neovim gutter line number color if detected
-	if line_number_hl then
-		pcall(vim.api.nvim_buf_set_extmark, buf, state.ns, line_num, 0, {
-			end_col = #line_text,
-			number_hl_group = line_number_hl,
-			priority = 50,
-		})
-	end
-
-	-- Apply text highlights from ANSI codes (includes line numbers and ellipsis)
-	for _, hl in ipairs(highlights) do
-		if hl.hl_group then
-			pcall(vim.api.nvim_buf_set_extmark, buf, state.ns, line_num, hl.col, {
-				end_col = hl.col + hl.length,
-				hl_group = hl.hl_group,
-				priority = 110,
-			})
-		end
-	end
-end
-
---- Apply custom header highlighting to file header lines
---- @param buf number Buffer handle
---- @param line_num number Line number (1-indexed) to apply highlight
---- @param line_text string Clean text of the line
---- @param has_custom_highlights boolean Whether this line already has custom highlights from content function
-local function apply_header_highlight(buf, line_num, line_text, has_custom_highlights)
-	local hl_config = config.header.highlight
-	if not hl_config or not (hl_config.link or hl_config.fg or hl_config.bg) then
-		return
-	end
-
-	-- Build extmark options
-	local extmark_opts = {
-		priority = 150, -- Higher than ANSI highlights (110)
-	}
-
-	-- If there are no custom highlights from content function, apply text highlights
-	if not has_custom_highlights then
-		extmark_opts.hl_group = "DifftFileHeader"
-		extmark_opts.end_col = math.max(1, #line_text)
-	end
-
-	-- Additionally extend background to full window width if configured
-	-- Use background-only highlight group to avoid overriding custom icon foreground
-	if hl_config.full_width then
-		extmark_opts.line_hl_group = "DifftFileHeaderBg"
-	end
-
-	-- Only apply if we have something to set
-	if extmark_opts.hl_group or extmark_opts.line_hl_group then
-		local success, err = pcall(vim.api.nvim_buf_set_extmark, buf, state.ns, line_num - 1, 0, extmark_opts)
-		if not success then
-			vim.notify("Failed to apply header highlight: " .. tostring(err), vim.log.levels.WARN)
-		end
-	end
-end
-
---- Parse file change headers from diff output
---- Detects difftastic file headers (e.g., "path/to/file.lua --- 1/2 --- Lua")
---- @param lines table List of clean text lines
---- @return table List of header info: {{line=number, filename=string, language=string, step={current, of}}, ...}
-local function parse_changes(lines)
-	local changes = {}
-
-	for i, line in ipairs(lines) do
-		-- Detect file headers in difftastic format with optional step information
-		-- Format: "lua/plugins/diff.lua --- 1/10 --- Lua"
-		-- Language can have spaces like "TypeScript TSX"
-		-- Headers must contain "---" separator and have both filename and language parts
-
-		-- Only process lines that contain "---" to avoid matching plain numbers
-		if not line:match("%-%-%-%s+") then
-			goto continue
-		end
-
-		local pattern_with_step = "^([%w_/%-%.][^%s]*)%s+%-%-%-%s+(%d+)/(%d+)%s+%-%-%-%s+(.+)$"
-		local filename, step_current, step_of, language = line:match(pattern_with_step)
-
-		if filename and step_current and step_of and language then
-			-- Validate: filename should contain a path separator or extension or start with uppercase
-			-- Language should not be just digits
-			local valid_filename = filename:match("[/.]") or filename:match("^%u")
-			local valid_language = not language:match("^%d+$")
-			if valid_filename and valid_language then
-				table.insert(changes, {
-					line = i,
-					filename = vim.trim(filename),
-					language = vim.trim(language),
-					step = {
-						current = tonumber(step_current),
-						of = tonumber(step_of),
-					},
-				})
-			end
-		else
-			-- Try without step info: "lua/plugins/diff.lua --- Lua" or "file.tsx --- TypeScript TSX"
-			local pattern_no_step = "^([%w_/%-%.][^%s]*)%s+%-%-%-%s+(.+)$"
-			filename, language = line:match(pattern_no_step)
-			if filename and language then
-				-- Validate: filename should contain a path separator or extension or start with uppercase
-				-- Language should not be just digits
-				local valid_filename = filename:match("[/.]") or filename:match("^%u")
-				local valid_language = not language:match("^%d+$")
-				if valid_filename and valid_language then
-					table.insert(changes, {
-						line = i,
-						filename = vim.trim(filename),
-						language = vim.trim(language),
-						step = nil,
-					})
-				end
-			end
-		end
-
-		::continue::
-	end
-
-	return changes
-end
 
 --- Set cursor position while preserving goal column (Vim-style behavior)
 --- @param line number Target line number
@@ -534,14 +211,11 @@ local function set_cursor_with_goal_column(line)
 	local current_pos = vim.api.nvim_win_get_cursor(state.win)
 	state.goal_column = current_pos[2]
 
-	-- Get the length of the target line (0-indexed column count)
 	local line_text = vim.api.nvim_buf_get_lines(state.buf, line - 1, line, false)[1] or ""
 	local line_length = #line_text
 
-	-- Clamp goal column to line length
 	local col = math.min(state.goal_column, line_length)
 
-	-- Set cursor position
 	vim.api.nvim_win_set_cursor(state.win, { line, col })
 end
 
@@ -627,7 +301,6 @@ local function open_file(mode)
 	local on_before_open = nil
 	if state.is_floating then
 		on_before_open = function()
-			-- Save cursor position before hiding
 			if state.win and vim.api.nvim_win_is_valid(state.win) then
 				state.last_cursor = vim.api.nvim_win_get_cursor(state.win)
 				vim.api.nvim_win_hide(state.win)
@@ -636,7 +309,6 @@ local function open_file(mode)
 		end
 	end
 
-	-- Use lib/file_jump to open file
 	file_jump.open_file_from_diff({
 		buf = state.buf,
 		win = state.win,
@@ -672,84 +344,8 @@ local function apply_custom_header_content(buf)
 		return {}
 	end
 
-	local has_custom_highlights = {}
-
-	for _, header_info in ipairs(state.changes) do
-		-- Use step from difftastic if available, otherwise pass nil
-		local step = header_info.step
-		local success, result = pcall(config.header.content, header_info.filename, step, header_info.language)
-
-		if not success then
-			vim.notify("Error in header.content function: " .. tostring(result), vim.log.levels.ERROR)
-			goto continue
-		end
-
-		if not result then
-			goto continue
-		end
-
-		local line_num = header_info.line
-
-		if type(result) == "string" then
-			-- Simple string result - replace the line
-			vim.api.nvim_buf_set_lines(buf, line_num - 1, line_num, false, { result })
-
-		elseif type(result) == "table" then
-			-- Table of {text, hl_group} pairs
-			local text_parts = {}
-			local highlights = {}
-			local col = 0
-
-			-- Check if there's a fallback header highlight configured
-			local hl_config = config.header.highlight
-			local has_fallback = hl_config and (hl_config.link or hl_config.fg or hl_config.bg)
-
-			for _, item in ipairs(result) do
-				if type(item) ~= "table" or #item < 1 then
-					goto continue_item
-				end
-
-				local text = tostring(item[1] or "")
-				local hl_group = item[2]
-
-				table.insert(text_parts, text)
-
-				if #text > 0 then
-					-- Use provided highlight group, or fallback to DifftFileHeader if configured
-					local final_hl = hl_group or (has_fallback and "DifftFileHeader" or nil)
-					if final_hl then
-						table.insert(highlights, {
-							col = col,
-							end_col = col + #text,
-							hl_group = final_hl,
-						})
-					end
-				end
-
-				col = col + #text
-				::continue_item::
-			end
-
-			local full_text = table.concat(text_parts)
-			vim.api.nvim_buf_set_lines(buf, line_num - 1, line_num, false, { full_text })
-
-			-- Apply highlights
-			for _, hl in ipairs(highlights) do
-				pcall(vim.api.nvim_buf_set_extmark, buf, state.ns, line_num - 1, hl.col, {
-					end_col = hl.end_col,
-					hl_group = hl.hl_group,
-					priority = 150, -- Same as header highlights
-				})
-			end
-
-			-- Mark this line as having custom highlights
-			has_custom_highlights[line_num] = true
-		end
-
-		::continue::
-	end
-
-	return has_custom_highlights
+	local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+	return renderer.render_custom_headers(buf, lines, state.changes, config, state.ns)
 end
 
 --- Load diff output from command and apply highlights
@@ -763,22 +359,17 @@ local function load_diff(cmd)
 		return
 	end
 
-	-- Clear existing highlights
 	vim.api.nvim_buf_clear_namespace(buf, state.ns, 0, -1)
 
-	-- Make buffer modifiable to update content
 	vim.api.nvim_buf_set_option(buf, "modifiable", true)
 
-	-- Set loading message
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, { config.loading_message })
 
-	-- Calculate COLUMNS based on window width
 	local columns = "10000" -- Default fallback
 	if win and vim.api.nvim_win_is_valid(win) then
 		columns = tostring(vim.api.nvim_win_get_width(win))
 	end
 
-	-- Execute diff command
 	vim.fn.jobstart(cmd or config.command, {
 		env = {
 			COLUMNS = columns,
@@ -789,7 +380,6 @@ local function load_diff(cmd)
 				return
 			end
 
-			-- Remove empty last line if present
 			if data[#data] == "" then
 				table.remove(data)
 			end
@@ -802,17 +392,14 @@ local function load_diff(cmd)
 				-- Ensure buffer is modifiable (protects against race conditions on rapid resizes)
 				vim.api.nvim_buf_set_option(buf, "modifiable", true)
 
-				-- Check if diff is empty
 				if #data == 0 or (#data == 1 and data[1] == "") then
-					-- Display custom "no diff" message
 					vim.api.nvim_buf_set_lines(buf, 0, -1, false, { config.no_diff_message })
 					vim.api.nvim_buf_set_option(buf, "modifiable", false)
 					return
 				end
 
-				-- Parse ANSI codes and clean text
 					-- Use lib/buffer to setup the buffer with ANSI parsing, rendering, and navigation
-					local result = buffer.setup_from_ansi_lines(buf, data, config, state.ns, {
+					local result = buffer.setup_from_ansi_lines(buf, data, get_active_config(), state.ns, {
 						renderer_opts = {
 							line_number_coloring = true,
 							empty_line_support = true,
@@ -824,29 +411,23 @@ local function load_diff(cmd)
 						},
 					})
 
-					-- Store headers for compatibility with existing code
 					state.changes = result.headers
 
-					-- Make buffer read-only
 					vim.api.nvim_buf_set_option(buf, "modifiable", false)
 
 					-- Restore last cursor position if available (for all modes), otherwise use auto_jump logic
 					if state.last_cursor then
-						-- Validate the saved position is still valid
 						local total_lines = vim.api.nvim_buf_line_count(buf)
 						if state.last_cursor[1] <= total_lines then
 							pcall(vim.api.nvim_win_set_cursor, win, state.last_cursor)
 						else
-							-- Fallback to last line if saved position is out of bounds
 							vim.api.nvim_win_set_cursor(win, { total_lines, 0 })
 						end
 						vim.cmd("normal! zz")
 					elseif config.auto_jump and #state.changes > 0 then
-						-- Jump to first change if available and auto_jump is enabled
 						vim.api.nvim_win_set_cursor(win, { state.changes[1].line, 0 })
 						vim.cmd("normal! zz")
 					else
-						-- Jump to top
 						vim.api.nvim_win_set_cursor(win, { 1, 0 })
 					end
 			end)
@@ -881,7 +462,6 @@ local function resize_float()
 		return
 	end
 
-	-- Get new window configuration based on current layout
 	local win_config
 	if config.layout == "float" then
 		win_config = get_float_layout()
@@ -891,7 +471,6 @@ local function resize_float()
 		return
 	end
 
-	-- Update window configuration
 	vim.api.nvim_win_set_config(state.win, win_config)
 end
 
@@ -900,7 +479,6 @@ end
 --- @param buf number Buffer handle
 --- @param is_floating boolean Whether this is a floating window
 local function setup_keymaps(buf, is_floating)
-	-- Only add close keymap for floating windows
 	if is_floating then
 		vim.keymap.set("n", config.keymaps.close, close_diff, {
 			buffer = buf,
@@ -917,7 +495,6 @@ local function setup_keymaps(buf, is_floating)
 		desc = "Refresh diff",
 	})
 
-	-- Setup jump keybinds if enabled
 	if config.jump and config.jump.enabled then
 		for key, mode in pairs(config.jump) do
 			if key ~= "enabled" then
@@ -948,7 +525,6 @@ function M.diff(opts)
 
 	-- For floating windows: check if buffer exists and window is hidden
 	if is_floating and state.buf and vim.api.nvim_buf_is_valid(state.buf) then
-		-- Window is hidden - show the existing buffer with cached content
 		local win_config
 		if layout == "float" then
 			win_config = get_float_layout()
@@ -959,7 +535,6 @@ function M.diff(opts)
 		local win = vim.api.nvim_open_win(state.buf, true, win_config)
 		state.win = win
 
-		-- Restore cursor position if saved
 		if state.last_cursor then
 			pcall(vim.api.nvim_win_set_cursor, win, state.last_cursor)
 			vim.cmd("normal! zz")
@@ -1099,14 +674,30 @@ end
 --- })
 function M.setup(opts)
 	opts = opts or {}
+
+	-- Setup default Difft* highlight groups (with fallback links)
+	highlight.setup_difft_highlights()
+
 	config = vim.tbl_deep_extend("force", config, opts)
 
+	-- Track which highlights were provided by user
+	if opts.diff and opts.diff.highlights then
+		for key, value in pairs(opts.diff.highlights) do
+			-- Replace (not merge) user-provided highlights
+			config.diff.highlights[key] = value
+			user_provided_highlights[key] = true
+		end
+	end
+
 	-- Normalize diff highlights and initialize ANSI color mapping
-	local normalized_highlights = normalize_diff_highlights(config.diff.highlights)
+	local normalized_highlights = highlight.normalize_diff_highlights(config.diff.highlights)
 	local normalized_config = vim.tbl_deep_extend("force", config, {
 		diff = { highlights = normalized_highlights }
 	})
 	parser.init_ansi_mapping(normalized_config)
+
+	-- Store normalized config for later use
+	M._normalized_config = normalized_config
 
 	-- Setup custom header highlight if configured
 	setup_header_highlight()
@@ -1116,8 +707,22 @@ function M.setup(opts)
 		group = vim.api.nvim_create_augroup("difft_colorscheme", { clear = true }),
 		callback = function()
 			parser.clear_hl_cache()
+
+			-- Re-setup Difft* highlight groups for new colorscheme (force recreation)
+			highlight.setup_difft_highlights(true)
+
+			-- Rebuild defaults for highlights not provided by user
+			local rebuilt_highlights = highlight.build_default_diff_highlights()
+			for key, value in pairs(user_provided_highlights) do
+				if value then
+					-- Keep user-provided highlight
+					rebuilt_highlights[key] = config.diff.highlights[key]
+				end
+			end
+			config.diff.highlights = rebuilt_highlights
+
 			-- Recreate custom highlights on colorscheme change
-			local norm_highlights = normalize_diff_highlights(config.diff.highlights)
+			local norm_highlights = highlight.normalize_diff_highlights(config.diff.highlights)
 			local norm_config = vim.tbl_deep_extend("force", config, {
 				diff = { highlights = norm_highlights }
 			})
@@ -1161,21 +766,6 @@ M.lib = {
 	renderer = renderer,
 	navigation = navigation,
 	buffer = buffer,
-}
-
--- Legacy _test export for backwards compatibility with existing code
-M._test = {
-	parse_ansi_line = parser.parse_ansi_line,
-	parse_changes = parse_changes,
-	parse_first_line_number = function(buf, start_line)
-		return file_jump.parse_first_line_number(buf, start_line, state.ns)
-	end,
-	extract_line_number = file_jump.extract_line_number,
-	find_header_above = function(current_line)
-		return file_jump.find_header_above(state.changes, current_line)
-	end,
-	state = state,
-	config = config,
 }
 
 return M
