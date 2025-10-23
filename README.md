@@ -451,9 +451,9 @@ without any configuration.
 - `DifftHint` - Hint text (uses `terminal_color_5` / magenta)
 - `DifftDim` - Dim text (uses `terminal_color_8` / gray)
 
-**Customize if needed** - See [Diff Highlights](#diff-highlights) for advanced customization options.
+See [Diff Highlights](#diff-highlights) for customization options.
 
-**For theme authors:** Define `Difft*` groups in your colorscheme to provide difft-specific colors.
+To provide difft-specific colors for themes, define `Difft*` groups in your colorscheme.
 
 ### File Headers
 - `DifftFileHeader` - File headers (uses `terminal_color_7` / white)
