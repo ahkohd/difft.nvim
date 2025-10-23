@@ -428,16 +428,10 @@ The plugin uses **terminal colors** by default, so it automatically matches your
 without any configuration.
 
 **Color precedence** (from lowest to highest priority):
-
-1. **ANSI defaults** - Standard terminal colors (red, green, yellow, etc.)
-   - Always available, works even with `nvim --clean`
-2. **Terminal colors** - `vim.g.terminal_color_N`
-   - Set by most colorschemes
-   - Automatically matches your terminal theme
-3. **Theme-defined** - `Difft*` highlight groups
-   - For theme authors who want difft-specific colors
-4. **User config** - `diff.highlights` setting
-   - Highest priority, full control
+1. **ANSI defaults** - Standard terminal colors (red, green, yellow, etc.).
+2. **Terminal colours** - `vim.g.terminal_color_N` - Set by most colorschemes.
+3. **Theme-defined** - `Difft*` highlight groups.
+4. **User config** - `diff.highlights` setting.
 
 ### Highlight Groups
 
