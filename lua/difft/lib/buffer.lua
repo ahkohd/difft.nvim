@@ -31,7 +31,6 @@ function M.setup_difft_buffer(buf, opts)
 		return
 	end
 
-	-- Extract options
 	local lines = opts.lines or {}
 	local all_highlights = opts.highlights or {}
 	local config = opts.config
@@ -50,34 +49,27 @@ function M.setup_difft_buffer(buf, opts)
 		return
 	end
 
-	-- Parse headers from lines
 	local headers, header_set = parser.parse_headers(lines)
 
-	-- Set buffer lines
 	vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 
-	-- Apply line highlights
 	for line_num, highlights in pairs(all_highlights) do
 		renderer.apply_line_highlights(buf, line_num - 1, highlights, ns, renderer_opts)
 	end
 
-	-- Apply custom header rendering if enabled
 	local has_custom_highlights = {}
 	if enable_custom_headers then
 		has_custom_highlights = renderer.render_custom_headers(buf, lines, headers, config, ns)
 	end
 
-	-- Apply header highlighting (background/border)
-	if config.header and config.header.highlight then
-		for _, header_info in ipairs(headers) do
-			local line_num = header_info.line
-			local line_text = lines[line_num]
-			local has_custom_hl = has_custom_highlights[line_num]
-			renderer.apply_header_highlight(buf, line_num, line_text, has_custom_hl, config, ns)
-		end
+	-- Apply header highlighting (always apply DifftFileHeader default even if user didn't configure)
+	for _, header_info in ipairs(headers) do
+		local line_num = header_info.line
+		local line_text = lines[line_num]
+		local has_custom_hl = has_custom_highlights[line_num]
+		renderer.apply_header_highlight(buf, line_num, line_text, has_custom_hl, config, ns)
 	end
 
-	-- Setup navigation if enabled
 	if nav_opts ~= false then
 		local nav_config = type(nav_opts) == "table" and nav_opts or {}
 		local enable_nav = nav_config.enabled ~= false -- default true
@@ -107,7 +99,6 @@ end
 function M.setup_from_ansi_lines(buf, raw_lines, config, ns, opts)
 	opts = opts or {}
 
-	-- Parse ANSI codes from all lines
 	local clean_lines = {}
 	local all_highlights = {}
 
@@ -121,7 +112,6 @@ function M.setup_from_ansi_lines(buf, raw_lines, config, ns, opts)
 		end
 	end
 
-	-- Merge parsed data into opts
 	opts.lines = clean_lines
 	opts.highlights = all_highlights
 	opts.config = config

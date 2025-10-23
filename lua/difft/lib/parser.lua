@@ -44,24 +44,22 @@ end
 --- @param bold boolean Whether to apply bold
 --- @param italic boolean Whether to apply italic
 --- @param dim boolean Whether to apply dim
+--- @param underline boolean Whether to apply underline
 --- @return string Highlight group name
-local function get_highlight_with_format(base_hl, bold, italic, dim)
-	if not bold and not italic and not dim then
+local function get_highlight_with_format(base_hl, bold, italic, dim, underline)
+	if not bold and not italic and not dim and not underline then
 		return base_hl
 	end
 
-	-- Create a unique key for this combination
-	local key = base_hl .. (bold and "_bold" or "") .. (italic and "_italic" or "") .. (dim and "_dim" or "")
+	local key = base_hl .. (bold and "_bold" or "") .. (italic and "_italic" or "") .. (dim and "_dim" or "") .. (underline and "_underline" or "")
 
-	-- Return cached highlight if it exists
 	if hl_cache[key] then
 		return hl_cache[key]
 	end
 
-	-- Get the base highlight properties
-	local base_props = vim.api.nvim_get_hl(0, { name = base_hl })
+	-- Get the base highlight properties (link=false to get actual colors, not follow links)
+	local base_props = vim.api.nvim_get_hl(0, { name = base_hl, link = false })
 
-	-- Add formatting attributes
 	local format_attrs = {}
 	if bold then
 		format_attrs.bold = true
@@ -69,14 +67,15 @@ local function get_highlight_with_format(base_hl, bold, italic, dim)
 	if italic then
 		format_attrs.italic = true
 	end
+	if underline then
+		format_attrs.underline = true
+	end
 	-- Dim is handled by using Comment for base_hl, so we don't need to set it here
 
 	local new_props = vim.tbl_extend("force", base_props, format_attrs)
 
-	-- Create the new highlight group
 	vim.api.nvim_set_hl(0, key, new_props)
 
-	-- Cache it
 	hl_cache[key] = key
 
 	return key
@@ -93,15 +92,14 @@ function M.parse_ansi_line(line)
 	local bold = false
 	local italic = false
 	local dim = false
+	local underline = false
 	local col = 0
 	local pos = 1
 
 	while pos <= #line do
-		-- Try to match ANSI escape sequence: ESC[<numbers>m
 		local esc_start, esc_end, codes = line:find("\27%[([%d;]+)m", pos)
 
 		if not esc_start then
-			-- No more escape codes, append rest of line
 			local text_chunk = line:sub(pos)
 			if #text_chunk > 0 then
 				table.insert(text_parts, text_chunk)
@@ -116,7 +114,6 @@ function M.parse_ansi_line(line)
 			break
 		end
 
-		-- Append text before escape code
 		local text_chunk = line:sub(pos, esc_start - 1)
 		if #text_chunk > 0 then
 			table.insert(text_parts, text_chunk)
@@ -124,20 +121,19 @@ function M.parse_ansi_line(line)
 				table.insert(highlights, {
 					col = col,
 					length = #text_chunk,
-					hl_group = get_highlight_with_format(current_hl, bold, italic, dim),
+					hl_group = get_highlight_with_format(current_hl, bold, italic, dim, underline),
 				})
 			end
 			col = col + #text_chunk
 		end
 
-		-- Parse the color code(s)
 		for code in codes:gmatch("%d+") do
 			if code == "0" then
-				-- Reset all
 				current_hl = nil
 				bold = false
 				italic = false
 				dim = false
+				underline = false
 			elseif code == "1" then
 				bold = true
 			elseif code == "2" then
@@ -148,6 +144,8 @@ function M.parse_ansi_line(line)
 				end
 			elseif code == "3" then
 				italic = true
+			elseif code == "4" then
+				underline = true
 			elseif ansi_to_hl[code] then
 				current_hl = ansi_to_hl[code]
 			end

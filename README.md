@@ -16,6 +16,7 @@ https://github.com/user-attachments/assets/04070894-71ec-4051-92ce-d3140827370d
 ## Features
 
 - Parse and display difftastic output with full ANSI color support
+- Automatically matches your colorscheme
 - Navigate between file changes with keybindings
 - Jump to changed files directly from diff view
 - Customizable window layouts (buffer, float, ivy-style)
@@ -291,12 +292,12 @@ Customize the highlight groups used for diff colors. Supports both **string** (g
 ```lua
 diff = {
   highlights = {
-    add = "DiffAdd",           -- Additions (green) - ANSI codes 32, 92
-    delete = "DiffDelete",     -- Deletions (red) - ANSI codes 31, 91
-    change = "DiffChange",     -- Changes (yellow) - ANSI codes 33, 93
-    info = "DiagnosticInfo",   -- Info (blue/cyan) - ANSI codes 34, 94, 36, 96
-    hint = "DiagnosticHint",   -- Hints (magenta) - ANSI codes 35, 95
-    dim = "Comment",           -- Dim text (gray/white) - ANSI codes 30, 90, 37, 97
+    add = "DifftAdd",          -- Additions (green) - ANSI codes 32, 92
+    delete = "DifftDelete",    -- Deletions (red) - ANSI codes 31, 91
+    change = "DifftChange",    -- Changes (yellow) - ANSI codes 33, 93
+    info = "DifftInfo",        -- Info (blue/cyan) - ANSI codes 34, 94, 36, 96
+    hint = "DifftHint",        -- Hints (magenta) - ANSI codes 35, 95
+    dim = "DifftDim",          -- Dim text (gray/white) - ANSI codes 30, 90, 37, 97
   },
 }
 ```
@@ -313,7 +314,7 @@ diff = {
     change = {link = "WarningMsg"},
 
     -- Mix and match
-    info = "DiagnosticInfo",  -- String
+    info = "DifftInfo",       -- String
     hint = {fg = "#c678dd"},  -- Color object
   },
 }
@@ -424,18 +425,40 @@ When viewing a diff:
 
 ## Highlight Groups
 
-The plugin uses these highlight groups for diff content:
+The plugin uses **terminal colors** by default, so it automatically matches your colorscheme
+without any configuration.
 
-- `DiffAdd` - Added lines (customizable via `diff.highlights.add`)
-- `DiffDelete` - Deleted lines (customizable via `diff.highlights.delete`)
-- `DiffChange` - Changed lines (customizable via `diff.highlights.change`)
-- `DiagnosticInfo` - Info text (customizable via `diff.highlights.info`)
-- `DiagnosticHint` - Hint text (customizable via `diff.highlights.hint`)
-- `Comment` - Dim text (customizable via `diff.highlights.dim`)
-- `DifftFileHeader` - File headers (customizable via `header.highlight`)
-- `DifftFileHeaderBg` - Header background for full-width mode
+**Color precedence** (from lowest to highest priority):
 
-See the [Diff Highlights](#diff-highlights) configuration section for customization options.
+1. **ANSI defaults** - Standard terminal colors (red, green, yellow, etc.)
+   - Always available, works even with `nvim --clean`
+2. **Terminal colors** - `vim.g.terminal_color_N`
+   - Set by most colorschemes
+   - Automatically matches your terminal theme
+3. **Theme-defined** - `Difft*` highlight groups
+   - For theme authors who want difft-specific colors
+4. **User config** - `diff.highlights` setting
+   - Highest priority, full control
+
+### Highlight Groups
+
+**Diff Content:**
+- `DifftAdd` - Added lines (uses `terminal_color_2` / green)
+- `DifftDelete` - Deleted lines (uses `terminal_color_1` / red)
+- `DifftChange` - Changed lines (uses `terminal_color_3` / yellow)
+
+**ANSI Colors:**
+- `DifftInfo` - Info text (uses `terminal_color_6` / cyan)
+- `DifftHint` - Hint text (uses `terminal_color_5` / magenta)
+- `DifftDim` - Dim text (uses `terminal_color_8` / gray)
+
+**Customize if needed** - See [Diff Highlights](#diff-highlights) for advanced customization options.
+
+**For theme authors:** Define `Difft*` groups in your colorscheme to provide difft-specific colors.
+
+### File Headers
+- `DifftFileHeader` - File headers (uses `terminal_color_7` / white)
+- `DifftFileHeaderBg` - Header background for full-width mode (transparent by default)
 
 ## Testing
 
