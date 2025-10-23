@@ -16,7 +16,6 @@ https://github.com/user-attachments/assets/04070894-71ec-4051-92ce-d3140827370d
 ## Features
 
 - Parse and display difftastic output with full ANSI color support
-- Automatically matches your colorscheme
 - Navigate between file changes with keybindings
 - Jump to changed files directly from diff view
 - Customizable window layouts (buffer, float, ivy-style)
