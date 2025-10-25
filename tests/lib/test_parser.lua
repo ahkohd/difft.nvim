@@ -585,6 +585,18 @@ function tests.test_filenames_with_spaces()
 	assert_eq(headers[2].step.current, 1, "Step info parsed correctly")
 end
 
+--- Test 52: Reject ellipsis and noise patterns
+function tests.test_reject_ellipsis_patterns()
+	local lines = {
+		"... 366 --- 1/2 --- Text",
+		"... --- Lua",
+		".. 100 --- 1/1 --- Python",
+		"... ... --- TypeScript",
+	}
+	local headers = parser.parse_headers(lines)
+	assert_eq(#headers, 0, "Ellipsis patterns rejected as headers")
+end
+
 -- Run all tests
 print("\n=== Running Parser Tests ===\n")
 
