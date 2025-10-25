@@ -363,6 +363,90 @@ function tests.test_get_state()
 	cleanup(win, buf)
 end
 
+--- Test 10: Navigate next from within header content
+function tests.test_next_from_header_content()
+	local lines = {
+		"file1.lua --- 1/3 --- Lua",
+		"content line 1",
+		"content line 2",
+		"file2.lua --- 2/3 --- Lua",
+		"content line 3",
+		"file3.lua --- 3/3 --- Lua",
+	}
+
+	local buf, win = create_test_window(lines)
+
+	local headers = {
+		{line = 1, filename = "file1.lua"},
+		{line = 4, filename = "file2.lua"},
+		{line = 6, filename = "file3.lua"},
+	}
+
+	navigation.setup(buf, {
+		headers = headers,
+		auto_jump = false,
+		keymaps = {next = "n", prev = "p", first = "gg", last = "G"},
+	})
+
+	-- Move cursor to line 2 (within first header's content)
+	vim.api.nvim_win_set_cursor(win, {2, 0})
+
+	-- Press 'n' to go to next (should go to line 4, NOT line 1)
+	vim.api.nvim_feedkeys("n", "x", false)
+	vim.wait(50)
+
+	local cursor = vim.api.nvim_win_get_cursor(win)
+	assert_eq(cursor[1], 4, "Navigated to second header from first header's content")
+
+	-- Now from line 5 (within second header's content), press 'n'
+	vim.api.nvim_win_set_cursor(win, {5, 0})
+	vim.api.nvim_feedkeys("n", "x", false)
+	vim.wait(50)
+
+	cursor = vim.api.nvim_win_get_cursor(win)
+	assert_eq(cursor[1], 6, "Navigated to third header from second header's content")
+
+	cleanup(win, buf)
+end
+
+--- Test 11: Navigate previous from within header content
+function tests.test_prev_from_header_content()
+	local lines = {
+		"file1.lua --- 1/3 --- Lua",
+		"content line 1",
+		"file2.lua --- 2/3 --- Lua",
+		"content line 2",
+		"file3.lua --- 3/3 --- Lua",
+		"content line 3",
+	}
+
+	local buf, win = create_test_window(lines)
+
+	local headers = {
+		{line = 1, filename = "file1.lua"},
+		{line = 3, filename = "file2.lua"},
+		{line = 5, filename = "file3.lua"},
+	}
+
+	navigation.setup(buf, {
+		headers = headers,
+		auto_jump = false,
+		keymaps = {next = "n", prev = "p", first = "gg", last = "G"},
+	})
+
+	-- Move cursor to line 4 (within second header's content)
+	vim.api.nvim_win_set_cursor(win, {4, 0})
+
+	-- Press 'p' to go to previous (should go to line 1)
+	vim.api.nvim_feedkeys("p", "x", false)
+	vim.wait(50)
+
+	local cursor = vim.api.nvim_win_get_cursor(win)
+	assert_eq(cursor[1], 1, "Navigated to first header from second header's content")
+
+	cleanup(win, buf)
+end
+
 -- Run all tests
 print("\n=== Running Navigation Tests ===\n")
 

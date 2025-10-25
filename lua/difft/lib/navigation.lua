@@ -62,6 +62,22 @@ local function next_change(buf)
 	end
 	local win = wins[1]
 
+	-- Update current position based on actual cursor location
+	local cursor = vim.api.nvim_win_get_cursor(win)
+	local cursor_line = cursor[1]
+
+	-- Find the closest header at or before the cursor
+	local closest_idx = 0
+	for i, header in ipairs(state.headers) do
+		if header.line <= cursor_line then
+			closest_idx = i
+		else
+			break
+		end
+	end
+	state.current = closest_idx
+
+	-- Now navigate to next
 	state.current = state.current + 1
 	if state.current > #state.headers then
 		state.current = 1
@@ -87,6 +103,22 @@ local function prev_change(buf)
 	end
 	local win = wins[1]
 
+	-- Update current position based on actual cursor location
+	local cursor = vim.api.nvim_win_get_cursor(win)
+	local cursor_line = cursor[1]
+
+	-- Find the closest header at or before the cursor
+	local closest_idx = 0
+	for i, header in ipairs(state.headers) do
+		if header.line <= cursor_line then
+			closest_idx = i
+		else
+			break
+		end
+	end
+	state.current = closest_idx
+
+	-- Now navigate to previous
 	state.current = state.current - 1
 	if state.current < 1 then
 		state.current = #state.headers
