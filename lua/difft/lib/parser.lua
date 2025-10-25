@@ -173,7 +173,7 @@ function M.parse_headers(lines)
 		end
 
 		-- Try pattern with step info first: "filename --- 1/10 --- language"
-		local pattern_with_step = "^([%w_/%-%.][^%s]*)%s+%-%-%-%s+(%d+)/(%d+)%s+%-%-%-%s+(.+)$"
+		local pattern_with_step = "^(.-)%s+%-%-%-%s+(%d+)/(%d+)%s+%-%-%-%s+(.+)$"
 		local filename, step_current, step_of, language = line:match(pattern_with_step)
 
 		if filename and step_current and step_of and language then
@@ -195,7 +195,7 @@ function M.parse_headers(lines)
 			end
 		else
 			-- Try without step info: "filename --- language"
-			local pattern_no_step = "^([%w_/%-%.][^%s]*)%s+%-%-%-%s+(.+)$"
+			local pattern_no_step = "^(.-)%s+%-%-%-%s+(.+)$"
 			filename, language = line:match(pattern_no_step)
 			if filename and language then
 				-- Validate: filename should contain a path separator or extension or start with uppercase
