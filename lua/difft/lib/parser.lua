@@ -157,6 +157,47 @@ function M.parse_ansi_line(line)
 	return table.concat(text_parts), highlights
 end
 
+--- Detect if a string starts with or is a line number from diff output
+--- Line numbers MUST have trailing space: (number|ellipsis)( (number|ellipsis))? <space>
+--- Examples: "1 ", "10 ", ". ", ".. ", "1 2 ", ". 1 ", "... 651 anything"
+--- @param str string The string to check
+--- @return boolean True if string starts with or is a line number
+function M.is_line_number(str)
+	local function is_number_or_ellipsis(s)
+		return s:match("^%d+$") ~= nil or s:match("^%.+$") ~= nil
+	end
+
+	-- Try two-component: (number|ellipsis) (number|ellipsis) <space>
+	local first, second = str:match("^(%S+) (%S+) ")
+	if first and second then
+		if is_number_or_ellipsis(first) and is_number_or_ellipsis(second) then
+			return true
+		end
+	end
+
+	-- Try single-component: (number|ellipsis) <space>
+	-- But reject if next token is number/ellipsis (incomplete two-component) or double space
+	local component, remainder = str:match("^(%S+) (.*)$")
+	if component and is_number_or_ellipsis(component) then
+		-- Reject if remainder starts with space followed by non-space (double space with content)
+		if remainder and remainder:match("^ %S") then
+			return false
+		end
+		-- Check if next token looks like second component of line number
+		if remainder and remainder ~= "" then
+			local next_token = remainder:match("^(%S+)")
+			if next_token and is_number_or_ellipsis(next_token) then
+				-- Next token is also number/ellipsis → incomplete two-component
+				return false
+			end
+		end
+		-- Valid single-component line number
+		return true
+	end
+
+	return false
+end
+
 --- Parse file change headers from diff output
 --- Detects difftastic file headers (e.g., "path/to/file.lua --- 1/2 --- Lua")
 --- @param lines table List of clean text lines
@@ -167,60 +208,51 @@ function M.parse_headers(lines)
 	local header_set = {}
 
 	for i, line in ipairs(lines) do
-		-- Only process lines that contain "---" to avoid matching plain numbers
-		if not line:match("%-%-%-%s+") then
+		-- Only process lines that contain "---"
+		if not line:match("%-%-%-") then
 			goto continue
 		end
 
-		-- Try pattern with step info first: "filename --- 1/10 --- language"
-		local pattern_with_step = "^(.-)%s+%-%-%-%s+(%d+)/(%d+)%s+%-%-%-%s+(.+)$"
-		local filename, step_current, step_of, language = line:match(pattern_with_step)
+		-- Reject if line starts with line number
+		if M.is_line_number(line) then
+			goto continue
+		end
 
-		if filename and step_current and step_of and language then
-			-- Validate: filename should contain a path separator or extension or start with uppercase
-			-- Language should not be just digits
-			-- More strict: extension should be dot followed by alphanumeric, not just any dot
-			local has_extension = filename:match("%.[%w]+$") or filename:match("%.[%w]+/")
-			local has_path = filename:match("/")
-			local starts_upper = filename:match("^%u")
-			local valid_filename = has_extension or has_path or starts_upper
-			local valid_language = not language:match("^%d+$")
-			if valid_filename and valid_language then
-				table.insert(headers, {
-					line = i,
-					filename = vim.trim(filename),
-					language = vim.trim(language),
-					step = {
-						current = tonumber(step_current),
-						of = tonumber(step_of),
-					},
-				})
-				header_set[i] = true
+		-- Extract filename (everything before first "---")
+		local filename = line:match("^(.-)%s+%-%-%-")
+		if not filename then
+			goto continue
+		end
+
+		-- Extract optional step info and language
+		local step_current, step_of, language
+		local after_filename = line:match("^.-%s+%-%-%-%s+(.*)$")
+
+		if after_filename and after_filename ~= "" then
+			-- Try pattern with step info and language: "1/10 --- language"
+			step_current, step_of, language = after_filename:match("^(%d+)/(%d+)%s+%-%-%-%s+(.+)$")
+
+			-- Try pattern with step info only: "1/10 ---"
+			if not step_current then
+				step_current, step_of = after_filename:match("^(%d+)/(%d+)%s+%-%-%-")
 			end
-		else
-			-- Try without step info: "filename --- language"
-			local pattern_no_step = "^(.-)%s+%-%-%-%s+(.+)$"
-			filename, language = line:match(pattern_no_step)
-			if filename and language then
-				-- Validate: filename should contain a path separator or extension or start with uppercase
-				-- Language should not be just digits
-				-- More strict: extension should be dot followed by alphanumeric, not just any dot
-				local has_extension = filename:match("%.[%w]+$") or filename:match("%.[%w]+/")
-				local has_path = filename:match("/")
-				local starts_upper = filename:match("^%u")
-				local valid_filename = has_extension or has_path or starts_upper
-				local valid_language = not language:match("^%d+$")
-				if valid_filename and valid_language then
-					table.insert(headers, {
-						line = i,
-						filename = vim.trim(filename),
-						language = vim.trim(language),
-						step = nil,
-					})
-					header_set[i] = true
-				end
+
+			-- Try pattern with language only (no step info)
+			if not step_current and not language then
+				language = after_filename:match("^(.+)$")
 			end
 		end
+
+		table.insert(headers, {
+			line = i,
+			filename = vim.trim(filename),
+			language = language and vim.trim(language) or nil,
+			step = step_current and {
+				current = tonumber(step_current),
+				of = tonumber(step_of),
+			} or nil,
+		})
+		header_set[i] = true
 
 		::continue::
 	end

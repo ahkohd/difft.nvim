@@ -167,6 +167,103 @@ function tests.test_parse_reset()
 	assert_eq(highlights[1].length, 3, "Only 'red' is highlighted")
 end
 
+--- Test 55: is_line_number - single number with space
+function tests.test_is_line_number_single_number()
+	assert_eq(parser.is_line_number("1 "), true, "1 with space is line number")
+	assert_eq(parser.is_line_number("10 "), true, "10 with space is line number")
+	assert_eq(parser.is_line_number("1000 "), true, "1000 with space is line number")
+end
+
+--- Test 56: is_line_number - single ellipsis with space
+function tests.test_is_line_number_single_ellipsis()
+	assert_eq(parser.is_line_number(". "), true, "Single dot with space is line number")
+	assert_eq(parser.is_line_number(".. "), true, "Two dots with space is line number")
+	assert_eq(parser.is_line_number("... "), true, "Three dots with space is line number")
+	assert_eq(parser.is_line_number(".... "), true, "Four dots with space is line number")
+end
+
+--- Test 57: is_line_number - two components with space
+function tests.test_is_line_number_two_components()
+	assert_eq(parser.is_line_number("1 2 "), true, "number number with space")
+	assert_eq(parser.is_line_number("10 20 "), true, "Two numbers with space")
+	assert_eq(parser.is_line_number("1 . "), true, "number ellipsis with space")
+	assert_eq(parser.is_line_number(". 1 "), true, "ellipsis number with space")
+	assert_eq(parser.is_line_number(".. .. "), true, "ellipsis ellipsis with space")
+	assert_eq(parser.is_line_number("1000 .... "), true, "Large number and dots with space")
+end
+
+--- Test 58: is_line_number - reject without trailing space
+function tests.test_is_line_number_reject_no_space()
+	assert_eq(parser.is_line_number("1"), false, "Number without space is NOT line number")
+	assert_eq(parser.is_line_number("."), false, "Dot without space is NOT line number")
+	assert_eq(parser.is_line_number("1 2"), false, "Two numbers without space is NOT line number")
+	assert_eq(parser.is_line_number(". 1"), false, "Ellipsis number without space is NOT line number")
+end
+
+--- Test 59: is_line_number - reject mixed patterns
+function tests.test_is_line_number_reject_mixed()
+	assert_eq(parser.is_line_number(".0 "), false, "Mixed dot-digit is NOT line number")
+	assert_eq(parser.is_line_number("1. "), false, "digit-dot is NOT line number")
+	assert_eq(parser.is_line_number("1.2 "), false, "decimal number is NOT line number")
+end
+
+--- Test 60: is_line_number - reject paths and filenames
+function tests.test_is_line_number_reject_paths()
+	assert_eq(parser.is_line_number("./hello "), false, "Relative path is NOT line number")
+	assert_eq(parser.is_line_number("../file "), false, "Parent path is NOT line number")
+	assert_eq(parser.is_line_number(".0 "), false, ".0 is NOT line number")
+	assert_eq(parser.is_line_number("..0.txt "), false, "..0.txt is NOT line number")
+	assert_eq(parser.is_line_number("1abc "), false, "Number with letters is NOT line number")
+	assert_eq(parser.is_line_number(".txt "), false, "Extension is NOT line number")
+end
+
+--- Test 61: is_line_number - reject invalid patterns
+function tests.test_is_line_number_reject_invalid()
+	assert_eq(parser.is_line_number(""), false, "Empty string is NOT line number")
+	assert_eq(parser.is_line_number(" "), false, "Just space is NOT line number")
+	assert_eq(parser.is_line_number("1  2 "), false, "Double space is NOT line number")
+	assert_eq(parser.is_line_number(" 1 "), false, "Leading space is NOT line number")
+end
+
+--- Test 62: is_line_number - detect lines starting with line numbers
+function tests.test_is_line_number_starts_with()
+	assert_eq(parser.is_line_number('... 651         "src/file.lua --- Lua",'), true, "Line starting with line number should be detected")
+end
+
+--- Test 63: is_line_number - edge cases
+function tests.test_is_line_number_edge_cases()
+	-- Two-component with content after
+	assert_eq(parser.is_line_number("1 2 content"), true, "Two-component with content after")
+	assert_eq(parser.is_line_number(". 100 more text"), true, "Ellipsis-number with content after")
+
+	-- Single-component with non-number content
+	assert_eq(parser.is_line_number("1 hello"), true, "Single number with non-number content")
+	assert_eq(parser.is_line_number(". hello"), true, "Single ellipsis with non-number content")
+
+	-- Multiple trailing spaces (extra spaces are content)
+	assert_eq(parser.is_line_number("1 2  "), true, "Two-component with double trailing space")
+	assert_eq(parser.is_line_number("1   "), true, "Single-component with triple trailing space")
+
+	-- Tab separators should be rejected
+	assert_eq(parser.is_line_number("1\t2 "), false, "Tab separator is invalid")
+	assert_eq(parser.is_line_number(".\t1 "), false, "Tab separator with ellipsis is invalid")
+end
+
+--- Test 64: Headers without language
+function tests.test_headers_without_language()
+	local lines = {
+		"src/file.lua ---",
+		"path/to/file --- 1/2 ---",
+	}
+	local headers = parser.parse_headers(lines)
+	assert_eq(#headers, 2, "Headers without language accepted")
+	assert_eq(headers[1].filename, "src/file.lua", "First filename")
+	assert_eq(headers[1].language, nil, "First language is nil")
+	assert_eq(headers[2].filename, "path/to/file", "Second filename")
+	assert_eq(headers[2].step.current, 1, "Step info parsed")
+	assert_eq(headers[2].language, nil, "Second language is nil")
+end
+
 --- Test 8: Parse headers with step info
 function tests.test_parse_headers_with_step()
 	local lines = {
@@ -243,26 +340,6 @@ function tests.test_reject_plain_numbers()
 	}
 	local headers = parser.parse_headers(lines)
 	assert_eq(#headers, 0, "Plain numbers rejected")
-end
-
---- Test 43: Reject lines with only digits as language
-function tests.test_reject_digit_language()
-	local lines = {
-		"file.txt --- 1/2 --- 123",
-		"path/file.lua --- 456",
-	}
-	local headers = parser.parse_headers(lines)
-	assert_eq(#headers, 0, "Digit-only language rejected")
-end
-
---- Test 44: Reject filenames without path separator or extension
-function tests.test_reject_invalid_filename()
-	local lines = {
-		"filename --- Lua",
-		"another --- 1/2 --- Python",
-	}
-	local headers = parser.parse_headers(lines)
-	assert_eq(#headers, 0, "Invalid filenames rejected")
 end
 
 --- Test 45: Accept filenames with underscores and dashes
@@ -595,6 +672,18 @@ function tests.test_reject_ellipsis_patterns()
 	}
 	local headers = parser.parse_headers(lines)
 	assert_eq(#headers, 0, "Ellipsis patterns rejected as headers")
+end
+
+--- Test 54: Accept valid paths with alphanumeric characters
+function tests.test_accept_valid_alphanumeric_paths()
+	local lines = {
+		"src/file.lua --- Lua",
+		"path/to/file --- Text",
+		"README --- Markdown",
+		"a.b --- 1/1 --- C",
+	}
+	local headers = parser.parse_headers(lines)
+	assert_eq(#headers, 4, "Valid paths with alphanumeric accepted")
 end
 
 -- Run all tests
