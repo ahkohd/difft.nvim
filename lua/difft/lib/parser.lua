@@ -179,7 +179,11 @@ function M.parse_headers(lines)
 		if filename and step_current and step_of and language then
 			-- Validate: filename should contain a path separator or extension or start with uppercase
 			-- Language should not be just digits
-			local valid_filename = filename:match("[/.]") or filename:match("^%u")
+			-- More strict: extension should be dot followed by alphanumeric, not just any dot
+			local has_extension = filename:match("%.[%w]+$") or filename:match("%.[%w]+/")
+			local has_path = filename:match("/")
+			local starts_upper = filename:match("^%u")
+			local valid_filename = has_extension or has_path or starts_upper
 			local valid_language = not language:match("^%d+$")
 			if valid_filename and valid_language then
 				table.insert(headers, {
@@ -200,7 +204,11 @@ function M.parse_headers(lines)
 			if filename and language then
 				-- Validate: filename should contain a path separator or extension or start with uppercase
 				-- Language should not be just digits
-				local valid_filename = filename:match("[/.]") or filename:match("^%u")
+				-- More strict: extension should be dot followed by alphanumeric, not just any dot
+				local has_extension = filename:match("%.[%w]+$") or filename:match("%.[%w]+/")
+				local has_path = filename:match("/")
+				local starts_upper = filename:match("^%u")
+				local valid_filename = has_extension or has_path or starts_upper
 				local valid_language = not language:match("^%d+$")
 				if valid_filename and valid_language then
 					table.insert(headers, {
