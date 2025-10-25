@@ -570,6 +570,21 @@ function tests.test_malformed_ansi()
 	assert_eq(#highlights, 0, "No highlights for malformed")
 end
 
+--- Test 51: Filenames with spaces
+function tests.test_filenames_with_spaces()
+	local lines = {
+		"ghostty/Library/Application Support/com.mitchellh.ghostty/colors --- Text",
+		"path with spaces/file.lua --- 1/2 --- Lua",
+	}
+	local headers = parser.parse_headers(lines)
+	assert_eq(#headers, 2, "Found 2 headers with spaces")
+	assert_eq(headers[1].filename, "ghostty/Library/Application Support/com.mitchellh.ghostty/colors", "First filename with spaces correct")
+	assert_eq(headers[1].language, "Text", "First language correct")
+	assert_eq(headers[2].filename, "path with spaces/file.lua", "Second filename with spaces correct")
+	assert_eq(headers[2].language, "Lua", "Second language correct")
+	assert_eq(headers[2].step.current, 1, "Step info parsed correctly")
+end
+
 -- Run all tests
 print("\n=== Running Parser Tests ===\n")
 
