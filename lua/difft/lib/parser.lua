@@ -51,7 +51,8 @@ local function get_highlight_with_format(base_hl, bold, italic, dim, underline)
 		return base_hl
 	end
 
-	local key = base_hl .. (bold and "_bold" or "") .. (italic and "_italic" or "") .. (dim and "_dim" or "") .. (underline and "_underline" or "")
+	local key = base_hl .. (bold and "_bold" or "")
+  .. (italic and "_italic" or "") .. (dim and "_dim" or "") .. (underline and "_underline" or "")
 
 	if hl_cache[key] then
 		return hl_cache[key]
