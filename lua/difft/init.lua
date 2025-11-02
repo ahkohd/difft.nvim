@@ -42,7 +42,7 @@ local config = {
 		relativenumber = false,
 		border = "rounded",
 	},
-	command = "jj diff --no-pager",
+	command = "GIT_EXTERNAL_DIFF='difft --color=always' git diff",
 	auto_jump = true,
 	layout = nil,
 	no_diff_message = "No changes found",

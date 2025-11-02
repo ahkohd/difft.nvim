@@ -75,7 +75,7 @@ return {
   },
   config = function()
     require("difft").setup({
-      command = "jj diff --no-pager",  -- or "GIT_EXTERNAL_DIFF='difft --color=always' git diff"
+      command = "GIT_EXTERNAL_DIFF='difft --color=always' git diff",  -- or "jj diff --no-pager"
       layout = "float",  -- nil (buffer), "float", or "ivy_taller"
     })
   end,
@@ -349,7 +349,7 @@ require("difft").setup({
 ### Other Options
 
 ```lua
-command = "jj diff --no-pager"  -- Diff command to execute
+command = "GIT_EXTERNAL_DIFF='difft --color=always' git diff"  -- Diff command to execute
 auto_jump = true                 -- Jump to first change on open
 no_diff_message = "No changes found"
 loading_message = "Loading diff..."
